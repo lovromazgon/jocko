@@ -1,3 +1,4 @@
+//go:build !race
 // +build !race
 
 package jocko
@@ -6,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"go.opentelemetry.io/otel/attribute"
 	"net"
 	"os"
 	"reflect"
@@ -16,7 +18,6 @@ import (
 	"github.com/hashicorp/consul/testutil/retry"
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/serf/serf"
-	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/require"
 
 	"github.com/travisjeffery/jocko/jocko/config"
@@ -454,11 +455,11 @@ func TestBroker_Run(t *testing.T) {
 			b := s.broker()
 
 			ctx, cancel := context.WithCancel(context.Background())
-			span := b.tracer.StartSpan("TestBroker_Run")
-			span.SetTag("name", tt.name)
-			span.SetTag("test", true)
-			defer span.Finish()
-			runCtx := opentracing.ContextWithSpan(ctx, span)
+			defer cancel()
+			ctx, span := b.tracer.Start(ctx, "TestBroker_Run")
+			span.SetAttributes(attribute.String("name", tt.name))
+			span.SetAttributes(attribute.Bool("test", true))
+			defer span.End()
 
 			defer func() {
 				os.RemoveAll(dir)
@@ -493,24 +494,23 @@ func TestBroker_Run(t *testing.T) {
 
 			for i := 0; i < len(tt.args.requests); i++ {
 				request := tt.args.requests[i]
-				reqSpan := b.tracer.StartSpan("request", opentracing.ChildOf(span.Context()))
+				ctx, _ := b.tracer.Start(ctx, "request")
 
-				ctx := &Context{header: request.header, req: request.req, parent: opentracing.ContextWithSpan(runCtx, reqSpan)}
+				reqCtx := &Context{header: request.header, req: request.req, parent: ctx}
 
-				tt.args.requestCh <- ctx
+				tt.args.requestCh <- reqCtx
 
-				ctx = <-tt.args.responseCh
+				respCtx := <-tt.args.responseCh
 
 				if tt.handle != nil {
-					tt.handle(t, b, ctx)
+					tt.handle(t, b, respCtx)
 				}
 
-				if !reflect.DeepEqual(ctx.res, tt.args.responses[i].res) {
-					t.Errorf("got %s, want: %s", spewstr(ctx.res), spewstr(tt.args.responses[i].res))
+				if !reflect.DeepEqual(respCtx.res, tt.args.responses[i].res) {
+					t.Errorf("got %s, want: %s", spewstr(respCtx.res), spewstr(tt.args.responses[i].res))
 				}
 
 			}
-			cancel()
 		})
 	}
 }
@@ -536,9 +536,11 @@ func setupTest(t *testing.T) (
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	span := b.tracer.StartSpan(t.Name())
-	span.SetTag("name", t.Name())
-	span.SetTag("test", true)
+	ctx, span := b.tracer.Start(ctx, t.Name())
+	span.SetAttributes(
+		attribute.String("name", t.Name()),
+		attribute.Bool("test", true),
+	)
 
 	retry.Run(t, func(r *retry.R) {
 		if len(b.brokerLookup.Brokers()) != 1 {
@@ -554,13 +556,11 @@ func setupTest(t *testing.T) (
 	teardown = func() {
 		close(reqCh)
 		close(resCh)
-		span.Finish()
+		span.End()
 		cancel()
 		os.RemoveAll(dir)
 		s.Shutdown()
 	}
-
-	ctx = opentracing.ContextWithSpan(ctx, span)
 
 	return ctx, s, reqCh, resCh, teardown
 }

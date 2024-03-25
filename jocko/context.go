@@ -29,8 +29,8 @@ func (ctx *Context) Response() interface{} {
 	return ctx.res
 }
 
-func (c *Context) Header() *protocol.RequestHeader {
-	return c.header
+func (ctx *Context) Header() *protocol.RequestHeader {
+	return ctx.header
 }
 
 func (ctx *Context) Deadline() (deadline time.Time, ok bool) {

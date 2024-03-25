@@ -32,7 +32,7 @@ func (b *Broker) setupRaft() (err error) {
 		}
 	}()
 
-	b.fsm, err = fsm.New(b.tracer, fsm.NodeID(b.config.ID))
+	b.fsm, err = fsm.New(b.config.ID)
 	if err != nil {
 		return err
 	}

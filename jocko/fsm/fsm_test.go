@@ -4,12 +4,11 @@ import (
 	"reflect"
 	"testing"
 
-	stdopentracing "github.com/opentracing/opentracing-go"
 	"github.com/travisjeffery/jocko/jocko/structs"
 )
 
 func testStore(t *testing.T) *Store {
-	s, err := NewStore(stdopentracing.GlobalTracer())
+	s, err := NewStore(0)
 	if err != nil {
 		t.Fatalf("err: %s", err)
 	}

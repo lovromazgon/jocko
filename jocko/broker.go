@@ -18,7 +18,6 @@ import (
 	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb"
 	"github.com/hashicorp/serf/serf"
-	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	uuid "github.com/satori/go.uuid"
 	"github.com/travisjeffery/jocko/commitlog"
@@ -29,6 +28,9 @@ import (
 	"github.com/travisjeffery/jocko/jocko/util"
 	"github.com/travisjeffery/jocko/log"
 	"github.com/travisjeffery/jocko/protocol"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var (
@@ -82,7 +84,7 @@ type Broker struct {
 	eventChLAN       chan serf.Event
 	logStateInterval time.Duration
 
-	tracer opentracing.Tracer
+	tracer trace.Tracer
 
 	shutdownCh   chan struct{}
 	shutdown     bool
@@ -90,7 +92,7 @@ type Broker struct {
 }
 
 // New is used to instantiate a new broker.
-func NewBroker(config *config.Config, tracer opentracing.Tracer) (*Broker, error) {
+func NewBroker(config *config.Config) (*Broker, error) {
 	b := &Broker{
 		config:           config,
 		shutdownCh:       make(chan struct{}),
@@ -98,7 +100,7 @@ func NewBroker(config *config.Config, tracer opentracing.Tracer) (*Broker, error
 		brokerLookup:     NewBrokerLookup(),
 		replicaLookup:    NewReplicaLookup(),
 		reconcileCh:      make(chan serf.Member, 32),
-		tracer:           tracer,
+		tracer:           otel.Tracer("broker"),
 		logStateInterval: time.Millisecond * 250,
 	}
 
@@ -135,10 +137,7 @@ func (b *Broker) Run(ctx context.Context, requests <-chan *Context, responses ch
 				goto DONE
 			}
 
-			queueSpan, ok := reqCtx.Value(requestQueueSpanKey).(opentracing.Span)
-			if ok {
-				queueSpan.Finish()
-			}
+			trace.SpanFromContext(reqCtx).End()
 
 			var res protocol.ResponseBody
 
@@ -187,9 +186,7 @@ func (b *Broker) Run(ctx context.Context, requests <-chan *Context, responses ch
 				res = b.handleDeleteTopics(reqCtx, req)
 			}
 
-			parentSpan := opentracing.SpanFromContext(reqCtx)
-			queueSpan = b.tracer.StartSpan("broker: queue response", opentracing.ChildOf(parentSpan.Context()))
-			responseCtx := context.WithValue(reqCtx, responseQueueSpanKey, queueSpan)
+			responseCtx, _ := b.tracer.Start(reqCtx, "broker: queue response")
 
 			responses <- &Context{
 				parent: responseCtx,
@@ -220,35 +217,28 @@ func (b *Broker) JoinLAN(addrs ...string) protocol.Error {
 
 // req handling.
 
-func span(ctx context.Context, tracer opentracing.Tracer, op string) opentracing.Span {
-	if ctx == nil {
-		// only done for unit tests
-		return tracer.StartSpan("broker: " + op)
-	}
-	parentSpan := opentracing.SpanFromContext(ctx)
-	if parentSpan == nil {
-		// only done for unit tests
-		return tracer.StartSpan("broker: " + op)
-	}
-	return tracer.StartSpan("broker: "+op, opentracing.ChildOf(parentSpan.Context()))
+func (b *Broker) span(ctx *Context, op string) trace.Span {
+	var sp trace.Span
+	ctx.parent, sp = b.tracer.Start(ctx, "broker: "+op)
+	return sp
 }
 
 var apiVersions = &protocol.APIVersionsResponse{APIVersions: protocol.APIVersions}
 
 func (b *Broker) handleAPIVersions(ctx *Context, req *protocol.APIVersionsRequest) *protocol.APIVersionsResponse {
-	sp := span(ctx, b.tracer, "api versions")
-	defer sp.Finish()
+	sp := b.span(ctx, "api versions")
+	defer sp.End()
 	return apiVersions
 }
 
 func (b *Broker) handleCreateTopic(ctx *Context, reqs *protocol.CreateTopicRequests) *protocol.CreateTopicsResponse {
-	sp := span(ctx, b.tracer, "create topic")
-	defer sp.Finish()
+	sp := b.span(ctx, "create topic")
+	defer sp.End()
 	res := new(protocol.CreateTopicsResponse)
 	res.APIVersion = reqs.Version()
 	res.TopicErrorCodes = make([]*protocol.TopicErrorCode, len(reqs.Requests))
 	isController := b.isController()
-	sp.LogKV("is controller", isController)
+	sp.SetAttributes(attribute.Bool("is controller", isController))
 	for i, req := range reqs.Requests {
 		if !isController {
 			res.TopicErrorCodes[i] = &protocol.TopicErrorCode{
@@ -277,8 +267,8 @@ func (b *Broker) handleCreateTopic(ctx *Context, reqs *protocol.CreateTopicReque
 }
 
 func (b *Broker) handleDeleteTopics(ctx *Context, reqs *protocol.DeleteTopicsRequest) *protocol.DeleteTopicsResponse {
-	sp := span(ctx, b.tracer, "delete topics")
-	defer sp.Finish()
+	sp := b.span(ctx, "delete topics")
+	defer sp.End()
 	res := new(protocol.DeleteTopicsResponse)
 	res.APIVersion = reqs.Version()
 	res.TopicErrorCodes = make([]*protocol.TopicErrorCode, len(reqs.Topics))
@@ -312,8 +302,8 @@ func (b *Broker) handleDeleteTopics(ctx *Context, reqs *protocol.DeleteTopicsReq
 }
 
 func (b *Broker) handleLeaderAndISR(ctx *Context, req *protocol.LeaderAndISRRequest) *protocol.LeaderAndISRResponse {
-	sp := span(ctx, b.tracer, "leader and isr")
-	defer sp.Finish()
+	sp := b.span(ctx, "leader and isr")
+	defer sp.End()
 	res := &protocol.LeaderAndISRResponse{
 		Partitions: make([]*protocol.LeaderAndISRPartition, len(req.PartitionStates)),
 	}
@@ -373,8 +363,8 @@ func (b *Broker) handleLeaderAndISR(ctx *Context, req *protocol.LeaderAndISRRequ
 }
 
 func (b *Broker) handleOffsets(ctx *Context, req *protocol.OffsetsRequest) *protocol.OffsetsResponse {
-	sp := span(ctx, b.tracer, "offsets")
-	defer sp.Finish()
+	sp := b.span(ctx, "offsets")
+	defer sp.End()
 	res := new(protocol.OffsetsResponse)
 	res.APIVersion = req.Version()
 	res.Responses = make([]*protocol.OffsetResponse, len(req.Topics))
@@ -406,8 +396,8 @@ func (b *Broker) handleOffsets(ctx *Context, req *protocol.OffsetsRequest) *prot
 }
 
 func (b *Broker) handleProduce(ctx *Context, req *protocol.ProduceRequest) *protocol.ProduceResponse {
-	sp := span(ctx, b.tracer, "produce")
-	defer sp.Finish()
+	sp := b.span(ctx, "produce")
+	defer sp.End()
 	res := new(protocol.ProduceResponse)
 	res.APIVersion = req.Version()
 	res.Responses = make([]*protocol.ProduceTopicResponse, len(req.TopicData))
@@ -456,8 +446,8 @@ func (b *Broker) handleProduce(ctx *Context, req *protocol.ProduceRequest) *prot
 }
 
 func (b *Broker) handleMetadata(ctx *Context, req *protocol.MetadataRequest) *protocol.MetadataResponse {
-	sp := span(ctx, b.tracer, "metadata")
-	defer sp.Finish()
+	sp := b.span(ctx, "metadata")
+	defer sp.End()
 	state := b.fsm.State()
 	brokers := make([]*protocol.Broker, 0, len(b.LANMembers()))
 
@@ -559,8 +549,8 @@ func (b *Broker) handleMetadata(ctx *Context, req *protocol.MetadataRequest) *pr
 }
 
 func (b *Broker) handleFindCoordinator(ctx *Context, req *protocol.FindCoordinatorRequest) *protocol.FindCoordinatorResponse {
-	sp := span(ctx, b.tracer, "find coordinator")
-	defer sp.Finish()
+	sp := b.span(ctx, "find coordinator")
+	defer sp.End()
 
 	res := &protocol.FindCoordinatorResponse{}
 	res.APIVersion = req.Version()
@@ -603,8 +593,8 @@ ERROR:
 }
 
 func (b *Broker) handleJoinGroup(ctx *Context, r *protocol.JoinGroupRequest) *protocol.JoinGroupResponse {
-	sp := span(ctx, b.tracer, "join group")
-	defer sp.Finish()
+	sp := b.span(ctx, "join group")
+	defer sp.End()
 
 	res := &protocol.JoinGroupResponse{}
 	res.APIVersion = r.Version()
@@ -662,8 +652,8 @@ func (b *Broker) handleJoinGroup(ctx *Context, r *protocol.JoinGroupRequest) *pr
 }
 
 func (b *Broker) handleLeaveGroup(ctx *Context, r *protocol.LeaveGroupRequest) *protocol.LeaveGroupResponse {
-	sp := span(ctx, b.tracer, "leave group")
-	defer sp.Finish()
+	sp := b.span(ctx, "leave group")
+	defer sp.End()
 
 	res := &protocol.LeaveGroupResponse{}
 	res.APIVersion = r.Version()
@@ -699,8 +689,8 @@ func (b *Broker) handleLeaveGroup(ctx *Context, r *protocol.LeaveGroupRequest) *
 }
 
 func (b *Broker) handleSyncGroup(ctx *Context, r *protocol.SyncGroupRequest) *protocol.SyncGroupResponse {
-	sp := span(ctx, b.tracer, "sync group")
-	defer sp.Finish()
+	sp := b.span(ctx, "sync group")
+	defer sp.End()
 
 	state := b.fsm.State()
 	res := &protocol.SyncGroupResponse{}
@@ -784,8 +774,8 @@ func (b *Broker) handleSyncGroup(ctx *Context, r *protocol.SyncGroupRequest) *pr
 }
 
 func (b *Broker) handleHeartbeat(ctx *Context, r *protocol.HeartbeatRequest) *protocol.HeartbeatResponse {
-	sp := span(ctx, b.tracer, "heartbeat")
-	defer sp.Finish()
+	sp := b.span(ctx, "heartbeat")
+	defer sp.End()
 
 	res := &protocol.HeartbeatResponse{}
 	res.APIVersion = r.Version()
@@ -808,8 +798,8 @@ func (b *Broker) handleHeartbeat(ctx *Context, r *protocol.HeartbeatRequest) *pr
 }
 
 func (b *Broker) handleFetch(ctx *Context, r *protocol.FetchRequest) *protocol.FetchResponse {
-	sp := span(ctx, b.tracer, "fetch")
-	defer sp.Finish()
+	sp := b.span(ctx, "fetch")
+	defer sp.End()
 	fres := &protocol.FetchResponse{
 		Responses: make(protocol.FetchTopicResponses, len(r.Topics)),
 	}
@@ -871,8 +861,8 @@ func (b *Broker) handleSaslHandshake(ctx *Context, req *protocol.SaslHandshakeRe
 }
 
 func (b *Broker) handleListGroups(ctx *Context, req *protocol.ListGroupsRequest) *protocol.ListGroupsResponse {
-	sp := span(ctx, b.tracer, "create topic")
-	defer sp.Finish()
+	sp := b.span(ctx, "create topic")
+	defer sp.End()
 	res := new(protocol.ListGroupsResponse)
 	res.APIVersion = req.Version()
 	state := b.fsm.State()
@@ -897,8 +887,8 @@ func (b *Broker) handleListGroups(ctx *Context, req *protocol.ListGroupsRequest)
 }
 
 func (b *Broker) handleDescribeGroups(ctx *Context, req *protocol.DescribeGroupsRequest) *protocol.DescribeGroupsResponse {
-	sp := span(ctx, b.tracer, "create topic")
-	defer sp.Finish()
+	sp := b.span(ctx, "create topic")
+	defer sp.End()
 	res := new(protocol.DescribeGroupsResponse)
 	res.APIVersion = req.Version()
 	state := b.fsm.State()
@@ -957,8 +947,8 @@ func (b *Broker) handleOffsetCommit(ctx *Context, req *protocol.OffsetCommitRequ
 }
 
 func (b *Broker) handleOffsetFetch(ctx *Context, req *protocol.OffsetFetchRequest) *protocol.OffsetFetchResponse {
-	sp := span(ctx, b.tracer, "create topic")
-	defer sp.Finish()
+	sp := b.span(ctx, "create topic")
+	defer sp.End()
 
 	res := new(protocol.OffsetFetchResponse)
 	res.APIVersion = req.Version()
