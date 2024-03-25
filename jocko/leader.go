@@ -49,7 +49,6 @@ func (b *Broker) setupRaft() (err error) {
 	b.raftTransport = trans
 
 	b.config.RaftConfig.LocalID = raft.ServerID(fmt.Sprintf("%d", b.config.ID))
-	b.config.RaftConfig.StartAsLeader = b.config.StartAsLeader
 
 	// build an in-memory setup for dev mode, disk-based otherwise.
 	var logStore raft.LogStore
@@ -115,7 +114,20 @@ func (b *Broker) setupRaft() (err error) {
 
 	// setup raft store
 	b.raft, err = raft.NewRaft(b.config.RaftConfig, b.fsm, logStore, stable, snap, trans)
-	return err
+	if err != nil {
+		return err
+	}
+
+	_, leaderID := b.raft.LeaderWithID()
+	for i := 0; i < 5 && leaderID == ""; i++ {
+		select {
+		case <-b.raft.LeaderCh():
+		case <-time.After(b.raft.ReloadableConfig().HeartbeatTimeout):
+		}
+		_, leaderID = b.raft.LeaderWithID()
+	}
+
+	return nil
 }
 
 func (b *Broker) monitorLeadership() {

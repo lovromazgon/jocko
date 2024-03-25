@@ -23,7 +23,6 @@ type Config struct {
 	RaftConfig                    *raft.Config
 	Bootstrap                     bool
 	BootstrapExpect               int
-	StartAsLeader                 bool
 	StartJoinAddrsLAN             []string
 	StartJoinAddrsWAN             []string
 	NonVoter                      bool

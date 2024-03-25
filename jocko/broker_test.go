@@ -4,26 +4,23 @@
 package jocko
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"go.opentelemetry.io/otel/attribute"
 	"net"
 	"os"
-	"reflect"
 	"testing"
 	"time"
 
-	"github.com/davecgh/go-spew/spew"
+	"github.com/google/go-cmp/cmp"
 	"github.com/hashicorp/consul/testutil/retry"
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/serf/serf"
 	"github.com/stretchr/testify/require"
-
 	"github.com/travisjeffery/jocko/jocko/config"
 	"github.com/travisjeffery/jocko/jocko/structs"
 	"github.com/travisjeffery/jocko/log"
 	"github.com/travisjeffery/jocko/protocol"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 func TestBroker_Run(t *testing.T) {
@@ -448,7 +445,6 @@ func TestBroker_Run(t *testing.T) {
 				cfg.ID = 1
 				cfg.Bootstrap = true
 				cfg.BootstrapExpect = 1
-				cfg.StartAsLeader = true
 				cfg.Addr = "localhost:9092"
 				cfg.OffsetsTopicReplicationFactor = 1
 			}, nil)
@@ -506,10 +502,9 @@ func TestBroker_Run(t *testing.T) {
 					tt.handle(t, b, respCtx)
 				}
 
-				if !reflect.DeepEqual(respCtx.res, tt.args.responses[i].res) {
-					t.Errorf("got %s, want: %s", spewstr(respCtx.res), spewstr(tt.args.responses[i].res))
+				if diff := cmp.Diff(tt.args.responses[i].res, respCtx.res); diff != "" {
+					t.Error(diff)
 				}
-
 			}
 		})
 	}
@@ -528,7 +523,6 @@ func setupTest(t *testing.T) (
 		cfg.ID = 1
 		cfg.Bootstrap = true
 		cfg.BootstrapExpect = 1
-		cfg.StartAsLeader = true
 		cfg.Addr = "localhost:9092"
 		cfg.OffsetsTopicReplicationFactor = 1
 	}, nil)
@@ -597,8 +591,8 @@ func TestBroker_Run_JoinSyncGroup(t *testing.T) {
 			TopicErrorCodes: []*protocol.TopicErrorCode{{Topic: "test-topic", ErrorCode: protocol.ErrNone.Code()}},
 		}},
 	}
-	if !reflect.DeepEqual(act.res, exp.res) {
-		t.Errorf("got %s, want: %s", spewstr(act.res), spewstr(exp.res))
+	if diff := cmp.Diff(exp.res, act.res); diff != "" {
+		t.Errorf(diff)
 	}
 
 	correlationID++
@@ -655,8 +649,8 @@ func TestBroker_Run_JoinSyncGroup(t *testing.T) {
 		},
 	}
 
-	if !reflect.DeepEqual(act.res, exp.res) {
-		t.Errorf("got %s, want: %s", spewstr(act.res), spewstr(exp.res))
+	if diff := cmp.Diff(exp.res, act.res); diff != "" {
+		t.Error(diff)
 	}
 }
 
@@ -686,12 +680,6 @@ func TestBroker_Shutdown(t *testing.T) {
 			}
 		})
 	}
-}
-
-func spewstr(v interface{}) string {
-	var buf bytes.Buffer
-	spew.Fdump(&buf, v)
-	return buf.String()
 }
 
 type fields struct {
@@ -770,7 +758,6 @@ func TestBroker_FailedMember(t *testing.T) {
 	s1, dir1 := NewTestServer(t, func(cfg *config.Config) {
 		cfg.Bootstrap = true
 		cfg.BootstrapExpect = 1
-		cfg.StartAsLeader = true
 	}, nil)
 	defer os.RemoveAll(dir1)
 	defer s1.Shutdown()
@@ -806,7 +793,6 @@ func TestBroker_LeftMember(t *testing.T) {
 	s1, dir1 := NewTestServer(t, func(cfg *config.Config) {
 		cfg.Bootstrap = true
 		cfg.BootstrapExpect = 1
-		cfg.StartAsLeader = true
 	}, nil)
 
 	defer os.RemoveAll(dir1)

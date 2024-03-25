@@ -120,7 +120,6 @@ func setup() (*jocko.Server, func()) {
 	c, cancel := jocko.NewTestServer(&testing.T{}, func(cfg *config.Config) {
 		cfg.Bootstrap = true
 		cfg.BootstrapExpect = 1
-		cfg.StartAsLeader = true
 	}, nil)
 	if err := c.Start(context.Background()); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to start cluster: %v\n", err)

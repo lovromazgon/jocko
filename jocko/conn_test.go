@@ -85,7 +85,6 @@ func TestConn(t *testing.T) {
 	s, dir := NewTestServer(t, func(cfg *config.Config) {
 		cfg.Bootstrap = true
 		cfg.BootstrapExpect = 1
-		cfg.StartAsLeader = true
 	}, nil)
 	defer os.RemoveAll(dir)
 	err := s.Start(context.Background())

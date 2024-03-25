@@ -37,7 +37,7 @@ func registerCommand(msg structs.MessageType, fn unboundCommand) {
 		commands = make(map[structs.MessageType]unboundCommand)
 	}
 	if commands[msg] != nil {
-		panic(fmt.Errorf("Message %d is already registered", msg))
+		panic(fmt.Errorf("message %d is already registered", msg))
 	}
 	commands[msg] = fn
 }

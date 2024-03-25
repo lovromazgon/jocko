@@ -325,7 +325,6 @@ func BenchmarkServer(b *testing.B) {
 	srv, dir := jocko.NewTestServer(b, func(cfg *config.Config) {
 		cfg.Bootstrap = true
 		cfg.BootstrapExpect = 1
-		cfg.StartAsLeader = true
 	}, nil)
 	defer os.RemoveAll(dir)
 	err := srv.Start(ctx)

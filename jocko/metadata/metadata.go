@@ -10,13 +10,8 @@ import (
 
 type NodeID int32
 
-func (n NodeID) Int32() int32 {
-	return int32(n)
-}
-
-func (n NodeID) String() string {
-	return fmt.Sprintf("%d", n)
-}
+func (n NodeID) Int32() int32   { return int32(n) }
+func (n NodeID) String() string { return strconv.Itoa(int(n)) }
 
 type Broker struct {
 	ID          NodeID
@@ -74,7 +69,7 @@ func IsBroker(m serf.Member) (*Broker, bool) {
 	_, nonVoter := m.Tags["non_voter"]
 
 	idStr := m.Tags["id"]
-	id, err := strconv.Atoi(idStr)
+	id, err := strconv.ParseInt(idStr, 10, 32)
 	if err != nil {
 		return nil, false
 	}
