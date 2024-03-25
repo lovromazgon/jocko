@@ -1364,12 +1364,10 @@ func (b *Broker) debugSnapshot() {
 
 func (b *Broker) withTimeout(timeout time.Duration, fn func() protocol.Error) protocol.Error {
 	if timeout <= 0 {
-		go fn()
-		return protocol.ErrNone
+		return fn()
 	}
 
 	c := make(chan protocol.Error, 1)
-	defer close(c)
 
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()

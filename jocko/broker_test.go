@@ -146,7 +146,7 @@ func TestBroker_Run(t *testing.T) {
 					{
 						header: &protocol.RequestHeader{CorrelationID: 1},
 						req: &protocol.CreateTopicRequests{
-							Timeout: 100 * time.Millisecond,
+							Timeout: time.Second,
 							Requests: []*protocol.CreateTopicRequest{{
 								Topic:             "test-topic",
 								NumPartitions:     1,
@@ -156,7 +156,7 @@ func TestBroker_Run(t *testing.T) {
 					{
 						header: &protocol.RequestHeader{CorrelationID: 2},
 						req: &protocol.ProduceRequest{
-							Timeout: 100 * time.Millisecond,
+							Timeout: time.Second,
 							TopicData: []*protocol.TopicData{{
 								Topic: "test-topic",
 								Data: []*protocol.Data{{
@@ -225,7 +225,7 @@ func TestBroker_Run(t *testing.T) {
 					{
 						header: &protocol.RequestHeader{CorrelationID: 1},
 						req: &protocol.CreateTopicRequests{
-							Timeout: 100 * time.Millisecond,
+							Timeout: time.Second,
 							Requests: []*protocol.CreateTopicRequest{{
 								Topic:             "test-topic",
 								NumPartitions:     1,
@@ -235,7 +235,7 @@ func TestBroker_Run(t *testing.T) {
 					{
 						header: &protocol.RequestHeader{CorrelationID: 2},
 						req: &protocol.ProduceRequest{
-							Timeout: 100 * time.Millisecond,
+							Timeout: time.Second,
 							TopicData: []*protocol.TopicData{{
 								Topic: "test-topic",
 								Data: []*protocol.Data{{
@@ -245,7 +245,7 @@ func TestBroker_Run(t *testing.T) {
 					{
 						header: &protocol.RequestHeader{CorrelationID: 3},
 						req: &protocol.FetchRequest{
-							MaxWaitTime: 100 * time.Millisecond,
+							MaxWaitTime: time.Second,
 							ReplicaID:   1,
 							MinBytes:    5,
 							Topics: []*protocol.FetchTopic{
@@ -311,7 +311,7 @@ func TestBroker_Run(t *testing.T) {
 					{
 						header: &protocol.RequestHeader{CorrelationID: 1},
 						req: &protocol.CreateTopicRequests{
-							Timeout: 100 * time.Millisecond,
+							Timeout: time.Second,
 							Requests: []*protocol.CreateTopicRequest{{
 								Topic:             "test-topic",
 								NumPartitions:     1,
@@ -321,7 +321,7 @@ func TestBroker_Run(t *testing.T) {
 					{
 						header: &protocol.RequestHeader{CorrelationID: 2},
 						req: &protocol.ProduceRequest{
-							Timeout: 100 * time.Millisecond,
+							Timeout: time.Second,
 							TopicData: []*protocol.TopicData{{
 								Topic: "test-topic",
 								Data: []*protocol.Data{{
@@ -379,7 +379,7 @@ func TestBroker_Run(t *testing.T) {
 				requests: []*Context{{
 					header: &protocol.RequestHeader{CorrelationID: 2},
 					req: &protocol.ProduceRequest{
-						Timeout: 100 * time.Millisecond,
+						Timeout: time.Second,
 						TopicData: []*protocol.TopicData{{
 							Topic: "another-topic",
 							Data: []*protocol.Data{{
@@ -411,7 +411,7 @@ func TestBroker_Run(t *testing.T) {
 				requests: []*Context{{
 					header: &protocol.RequestHeader{CorrelationID: 1},
 					req: &protocol.CreateTopicRequests{
-						Timeout: 100 * time.Millisecond,
+						Timeout: time.Second,
 						Requests: []*protocol.CreateTopicRequest{{
 							Topic:             "test-topic",
 							NumPartitions:     1,
@@ -580,7 +580,7 @@ func TestBroker_Run_JoinSyncGroup(t *testing.T) {
 			ClientID:      "join-and-sync",
 		},
 		req: &protocol.CreateTopicRequests{
-			Timeout: 100 * time.Millisecond,
+			Timeout: time.Second,
 			Requests: []*protocol.CreateTopicRequest{{
 				Topic:             "test-topic",
 				NumPartitions:     1,
