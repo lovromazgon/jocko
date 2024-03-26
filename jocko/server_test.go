@@ -10,7 +10,6 @@ import (
 	"github.com/Shopify/sarama"
 	cluster "github.com/bsm/sarama-cluster"
 	"github.com/hashicorp/consul/testutil/retry"
-	ti "github.com/mitchellh/go-testing-interface"
 	"github.com/stretchr/testify/require"
 	"github.com/travisjeffery/jocko/jocko"
 	"github.com/travisjeffery/jocko/jocko/config"
@@ -34,7 +33,7 @@ func TestProduceConsume(t *testing.T) {
 	s1, dir1 := jocko.NewTestServer(t, func(cfg *config.Config) {
 		cfg.Bootstrap = true
 	}, nil)
-	ctx1, cancel1 := context.WithCancel((context.Background()))
+	ctx1, cancel1 := context.WithCancel(context.Background())
 	defer cancel1()
 	err := s1.Start(ctx1)
 	require.NoError(t, err)
@@ -47,7 +46,7 @@ func TestProduceConsume(t *testing.T) {
 	s2, dir2 := jocko.NewTestServer(t, func(cfg *config.Config) {
 		cfg.Bootstrap = false
 	}, nil)
-	ctx2, cancel2 := context.WithCancel((context.Background()))
+	ctx2, cancel2 := context.WithCancel(context.Background())
 	defer cancel2()
 	err = s2.Start(ctx2)
 	require.NoError(t, err)
@@ -57,7 +56,7 @@ func TestProduceConsume(t *testing.T) {
 	s3, dir3 := jocko.NewTestServer(t, func(cfg *config.Config) {
 		cfg.Bootstrap = false
 	}, nil)
-	ctx3, cancel3 := context.WithCancel((context.Background()))
+	ctx3, cancel3 := context.WithCancel(context.Background())
 	defer cancel3()
 	err = s3.Start(ctx3)
 	require.NoError(t, err)
@@ -178,7 +177,7 @@ func TestConsumerGroup(t *testing.T) {
 	s1, dir1 := jocko.NewTestServer(t, func(cfg *config.Config) {
 		cfg.Bootstrap = true
 	}, nil)
-	ctx1, cancel1 := context.WithCancel((context.Background()))
+	ctx1, cancel1 := context.WithCancel(context.Background())
 	defer cancel1()
 	err := s1.Start(ctx1)
 	require.NoError(t, err)
@@ -191,7 +190,7 @@ func TestConsumerGroup(t *testing.T) {
 	s2, dir2 := jocko.NewTestServer(t, func(cfg *config.Config) {
 		cfg.Bootstrap = false
 	}, nil)
-	ctx2, cancel2 := context.WithCancel((context.Background()))
+	ctx2, cancel2 := context.WithCancel(context.Background())
 	defer cancel2()
 	err = s2.Start(ctx2)
 	require.NoError(t, err)
@@ -201,7 +200,7 @@ func TestConsumerGroup(t *testing.T) {
 	s3, dir3 := jocko.NewTestServer(t, func(cfg *config.Config) {
 		cfg.Bootstrap = false
 	}, nil)
-	ctx3, cancel3 := context.WithCancel((context.Background()))
+	ctx3, cancel3 := context.WithCancel(context.Background())
 	defer cancel3()
 	err = s3.Start(ctx3)
 	require.NoError(t, err)
@@ -320,7 +319,7 @@ func TestConsumerGroup(t *testing.T) {
 }
 
 func BenchmarkServer(b *testing.B) {
-	ctx, cancel := context.WithCancel((context.Background()))
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	srv, dir := jocko.NewTestServer(b, func(cfg *config.Config) {
 		cfg.Bootstrap = true
@@ -380,7 +379,7 @@ func BenchmarkServer(b *testing.B) {
 	})
 }
 
-func createTopic(t ti.T, s1 *jocko.Server, other ...*jocko.Server) error {
+func createTopic(t jocko.T, s1 *jocko.Server, other ...*jocko.Server) error {
 	d := &jocko.Dialer{
 		Timeout:   10 * time.Second,
 		DualStack: true,

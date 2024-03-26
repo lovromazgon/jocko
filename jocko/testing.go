@@ -8,7 +8,6 @@ import (
 
 	"github.com/hashicorp/consul/testutil/retry"
 	"github.com/hashicorp/raft"
-	"github.com/mitchellh/go-testing-interface"
 	dynaport "github.com/travisjeffery/go-dynaport"
 	"github.com/travisjeffery/jocko/jocko/config"
 )
@@ -17,7 +16,14 @@ var (
 	nodeNumber int32
 )
 
-func NewTestServer(t testing.T, cbBroker func(cfg *config.Config), cbServer func(cfg *config.Config)) (*Server, string) {
+type T interface {
+	Name() string
+	Fatalf(format string, args ...interface{})
+	Log(args ...interface{})
+	FailNow()
+}
+
+func NewTestServer(t T, cbBroker func(cfg *config.Config), cbServer func(cfg *config.Config)) (*Server, string) {
 	ports := dynaport.Get(4)
 	nodeID := atomic.AddInt32(&nodeNumber, 1)
 
@@ -66,7 +72,7 @@ func NewTestServer(t testing.T, cbBroker func(cfg *config.Config), cbServer func
 	return NewServer(config, b, nil), tmpDir
 }
 
-func TestJoin(t testing.T, s1 *Server, other ...*Server) {
+func TestJoin(t T, s1 *Server, other ...*Server) {
 	addr := fmt.Sprintf("127.0.0.1:%d",
 		s1.config.SerfLANConfig.MemberlistConfig.BindPort)
 	for _, s2 := range other {
@@ -79,7 +85,7 @@ func TestJoin(t testing.T, s1 *Server, other ...*Server) {
 }
 
 // WaitForLeader waits for one of the servers to be leader, failing the test if no one is the leader. Returns the leader (if there is one) and non-leaders.
-func WaitForLeader(t testing.T, servers ...*Server) (*Server, []*Server) {
+func WaitForLeader(t T, servers ...*Server) (*Server, []*Server) {
 	tmp := struct {
 		leader    *Server
 		followers map[*Server]bool

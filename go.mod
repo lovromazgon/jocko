@@ -10,12 +10,11 @@ require (
 	github.com/davecgh/go-spew v1.1.1
 	github.com/google/go-cmp v0.6.0
 	github.com/hashicorp/consul v1.0.3
-	github.com/hashicorp/go-memdb v0.0.0-20171005030753-75ff99613d28
+	github.com/hashicorp/go-memdb v1.3.4
 	github.com/hashicorp/memberlist v0.1.3
 	github.com/hashicorp/raft v1.6.1
 	github.com/hashicorp/raft-boltdb v0.0.0-20191021154308-4207f1bf0617
 	github.com/hashicorp/serf v0.8.5
-	github.com/mitchellh/go-testing-interface v0.0.0-20171004221916-a61a99592b77
 	github.com/pkg/errors v0.8.1
 	github.com/satori/go.uuid v1.2.0
 	github.com/spf13/cobra v0.0.1
@@ -47,12 +46,12 @@ require (
 	github.com/google/btree v0.0.0-20180813153112-4030bb1f1f0c // indirect
 	github.com/hashicorp/errwrap v1.0.0 // indirect
 	github.com/hashicorp/go-hclog v1.6.2 // indirect
-	github.com/hashicorp/go-immutable-radix v1.0.0 // indirect
+	github.com/hashicorp/go-immutable-radix v1.3.0 // indirect
 	github.com/hashicorp/go-msgpack v0.5.5 // indirect
 	github.com/hashicorp/go-msgpack/v2 v2.1.1 // indirect
 	github.com/hashicorp/go-multierror v1.0.0 // indirect
 	github.com/hashicorp/go-sockaddr v1.0.0 // indirect
-	github.com/hashicorp/golang-lru v0.5.0 // indirect
+	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/mattn/go-colorable v0.1.12 // indirect
 	github.com/mattn/go-isatty v0.0.14 // indirect
