@@ -834,7 +834,7 @@ func (b *Broker) handleFetch(ctx *Context, r *protocol.FetchRequest) *protocol.F
 					// TODO: copy these bytes to outer bytes
 					nn, err := io.Copy(buf, rdr)
 					if err != nil && err != io.EOF {
-						log.Error.Printf("broker/%d: reader copy error", b.config.ID, err)
+						log.Error.Printf("broker/%d: reader copy error: %v", b.config.ID, err)
 						return protocol.ErrUnknown.WithErr(rdrErr)
 					}
 					n += int32(nn)

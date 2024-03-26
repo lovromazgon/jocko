@@ -28,7 +28,6 @@ require (
 	go.opentelemetry.io/otel/sdk v1.24.0
 	go.opentelemetry.io/otel/sdk/metric v1.24.0
 	go.opentelemetry.io/otel/trace v1.24.0
-	upspin.io v0.0.0-20180517055408-63f1073c7a3a
 )
 
 require (

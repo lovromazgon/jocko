@@ -335,5 +335,3 @@ gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
 gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
 launchpad.net/gocheck v0.0.0-20140225173054-000000000087 h1:Izowp2XBH6Ya6rv+hqbceQyw/gSGoXfH/UPoTGduL54=
 launchpad.net/gocheck v0.0.0-20140225173054-000000000087/go.mod h1:hj7XX3B/0A+80Vse0e+BUHsHMTEhd0O4cpUHr/e/BUM=
-upspin.io v0.0.0-20180517055408-63f1073c7a3a h1:SmRV4ptPhupMzU2o5cWgX9FmOwGLP135Z7jihhmvgtk=
-upspin.io v0.0.0-20180517055408-63f1073c7a3a/go.mod h1:4hdXTXkMPXxzbiw/sultoifpccn98hChAFvrU19V2ug=

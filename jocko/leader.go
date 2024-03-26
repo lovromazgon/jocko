@@ -280,7 +280,7 @@ func (b *Broker) reconcileMember(m serf.Member) error {
 		err = b.handleLeftMember(m)
 	}
 	if err != nil {
-		log.Error.Printf("leader/%d: reconcile member: %s: error: %s", m.Name, b.config.ID, err)
+		log.Error.Printf("leader/%d: reconcile member: %s: error: %s", b.config.ID, m.Name, err)
 	}
 	return nil
 }
@@ -567,7 +567,7 @@ func (b *Broker) handleFailedMember(m serf.Member) error {
 		broker := b.brokerLookup.BrokerByID(raft.ServerID(fmt.Sprintf("%d", n.Node)))
 		if broker == nil {
 			// TODO: this probably shouldn't happen -- likely a root issue to fix
-			log.Error.Printf("trying to assign partitions to unknown broker: %s", n)
+			log.Error.Printf("trying to assign partitions to unknown broker: %v", n)
 			continue
 		}
 		conn, err := defaultDialer.Dial("tcp", broker.BrokerAddr)

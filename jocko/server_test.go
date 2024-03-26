@@ -22,13 +22,13 @@ const (
 )
 
 func init() {
-	log.SetLevel("debug")
+	log.SetLevel(log.DebugLevel)
 }
 
 func TestProduceConsume(t *testing.T) {
 	t.Skip()
 
-	sarama.Logger = log.NewStdLogger(log.New(log.DebugLevel, "server_test: sarama: "))
+	sarama.Logger = log.New(log.DebugLevel, "server_test: sarama: ")
 
 	s1, dir1 := jocko.NewTestServer(t, func(cfg *config.Config) {
 		cfg.Bootstrap = true
