@@ -17,7 +17,7 @@ require (
 	github.com/hashicorp/raft-boltdb/v2 v2.3.0
 	github.com/hashicorp/serf v0.10.1
 	github.com/spf13/cobra v1.8.0
-	github.com/stretchr/testify v1.8.4
+	github.com/stretchr/testify v1.9.0
 	github.com/tj/go-gracefully v0.0.0-20141227061038-005c1d102f1b
 	github.com/travisjeffery/go-dynaport v0.0.0-20171203090423-24009f4f2f49
 	github.com/tysontate/gommap v0.0.0-20131202084435-e87a6e482c2c
