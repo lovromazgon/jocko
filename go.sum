@@ -214,8 +214,6 @@ github.com/stretchr/testify v1.5.1/go.mod h1:5W2xD1RspED5o8YsWQXVCued0rvSQ+mT+I5
 github.com/stretchr/testify v1.7.2/go.mod h1:R6va5+xMeoiuVRoj+gSkQ7d3FALtqAAGI1FQKckRals=
 github.com/stretchr/testify v1.9.0 h1:HtqpIVDClZ4nwg75+f6Lvsy/wHu+3BoSGCbBAcpTsTg=
 github.com/stretchr/testify v1.9.0/go.mod h1:r2ic/lqez/lEtzL7wO/rwa5dbSLXVDPFyf8C91i36aY=
-github.com/tj/go-gracefully v0.0.0-20141227061038-005c1d102f1b h1:EjOGYW5FYZMUVtXjWl01EY359uYLfzTcOkxuNTcKZYc=
-github.com/tj/go-gracefully v0.0.0-20141227061038-005c1d102f1b/go.mod h1:uqlTeGUUfRdQvlQGkv+DYe3lLST3DionEwMA9YAYibY=
 github.com/travisjeffery/go-dynaport v0.0.0-20171203090423-24009f4f2f49 h1:K+L347hjHiye7Xijn7oLHC+nIdXd0Z5cYrp2zt+ZrFk=
 github.com/travisjeffery/go-dynaport v0.0.0-20171203090423-24009f4f2f49/go.mod h1:0LHuDS4QAx+mAc4ri3WkQdavgVoBIZ7cE9ob17KIAJk=
 github.com/tv42/httpunix v0.0.0-20150427012821-b75d8614f926/go.mod h1:9ESjWnEqriFuLhtthL60Sar/7RFoluCcXsuvEwTV5KM=

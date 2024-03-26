@@ -7,12 +7,13 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/hashicorp/memberlist"
 	"github.com/spf13/cobra"
-	gracefully "github.com/tj/go-gracefully"
 	"github.com/travisjeffery/jocko/jocko"
 	"github.com/travisjeffery/jocko/jocko/config"
 	"github.com/travisjeffery/jocko/protocol"
@@ -98,8 +99,7 @@ func run(cmd *cobra.Command, args []string) {
 
 	defer srv.Shutdown()
 
-	gracefully.Timeout = 10 * time.Second
-	gracefully.Shutdown()
+	shutdown()
 
 	cancel()
 	if err := broker.Shutdown(); err != nil {
@@ -252,4 +252,23 @@ func newMeterProvider() (*metric.MeterProvider, error) {
 			metric.WithInterval(3*time.Second))),
 	)
 	return meterProvider, nil
+}
+
+// shutdown gracefully, or force exit after two consecutive signals.
+func shutdown() {
+	timeout := 10 * time.Second
+	ch := make(chan os.Signal, 2)
+	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+
+	log.Printf("received signal %s", <-ch)
+	log.Printf("terminating in %s", timeout)
+
+	go func() {
+		select {
+		case <-time.After(timeout):
+			log.Fatalf("timeout reached: terminating")
+		case s := <-ch:
+			log.Fatalf("received signal %s: terminating", s)
+		}
+	}()
 }
