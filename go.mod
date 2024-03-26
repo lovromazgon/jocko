@@ -5,7 +5,7 @@ go 1.22
 require (
 	github.com/Shopify/sarama v1.13.0
 	github.com/bsm/sarama-cluster v2.1.10+incompatible
-	github.com/cenkalti/backoff v2.0.0+incompatible
+	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/cespare/xxhash v1.0.0
 	github.com/davecgh/go-spew v1.1.1
 	github.com/go-kit/kit v0.9.0

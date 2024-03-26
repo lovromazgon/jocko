@@ -3,7 +3,7 @@ package jocko
 import (
 	"time"
 
-	"github.com/cenkalti/backoff"
+	"github.com/cenkalti/backoff/v4"
 	"github.com/travisjeffery/jocko/log"
 	"github.com/travisjeffery/jocko/protocol"
 )
@@ -40,6 +40,7 @@ func NewReplicator(config ReplicatorConfig, replica *Replica, leader client) *Re
 		config.MinBytes = 1
 	}
 	bo := backoff.NewExponentialBackOff()
+	bo.Reset()
 	r := &Replicator{
 		config:  config,
 		replica: replica,
