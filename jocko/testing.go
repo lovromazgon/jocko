@@ -1,12 +1,13 @@
 package jocko
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"sync/atomic"
 	"time"
 
-	"github.com/hashicorp/consul/testutil/retry"
+	"github.com/avast/retry-go/v4"
 	"github.com/hashicorp/raft"
 	dynaport "github.com/travisjeffery/go-dynaport"
 	"github.com/travisjeffery/jocko/jocko/config"
@@ -90,7 +91,8 @@ func WaitForLeader(t T, servers ...*Server) (*Server, []*Server) {
 		leader    *Server
 		followers map[*Server]bool
 	}{nil, make(map[*Server]bool)}
-	retry.Run(t, func(r *retry.R) {
+
+	Retry(t, func() error {
 		for _, s := range servers {
 			if raft.Leader == s.handler.(*Broker).raft.State() {
 				tmp.leader = s
@@ -99,12 +101,26 @@ func WaitForLeader(t T, servers ...*Server) (*Server, []*Server) {
 			}
 		}
 		if tmp.leader == nil {
-			r.Fatal("no leader")
+			return errors.New("no leader")
 		}
+		return nil
 	})
+
 	followers := make([]*Server, 0, len(tmp.followers))
 	for f := range tmp.followers {
 		followers = append(followers, f)
 	}
 	return tmp.leader, followers
+}
+
+func Retry(t T, f func() error) {
+	err := retry.Do(
+		f,
+		retry.Delay(25*time.Millisecond),
+		retry.DelayType(retry.FixedDelay),
+		retry.Attempts(50),
+	)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
 }

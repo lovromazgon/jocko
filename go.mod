@@ -4,12 +4,12 @@ go 1.22
 
 require (
 	github.com/Shopify/sarama v1.13.0
+	github.com/avast/retry-go/v4 v4.5.1
 	github.com/bsm/sarama-cluster v2.1.10+incompatible
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/cespare/xxhash/v2 v2.2.0
 	github.com/davecgh/go-spew v1.1.1
 	github.com/google/go-cmp v0.6.0
-	github.com/hashicorp/consul v1.0.3
 	github.com/hashicorp/go-memdb v1.3.4
 	github.com/hashicorp/memberlist v0.1.3
 	github.com/hashicorp/raft v1.6.1

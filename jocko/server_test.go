@@ -3,13 +3,13 @@ package jocko_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/Shopify/sarama"
 	cluster "github.com/bsm/sarama-cluster"
-	"github.com/hashicorp/consul/testutil/retry"
 	"github.com/stretchr/testify/require"
 	"github.com/travisjeffery/jocko/jocko"
 	"github.com/travisjeffery/jocko/jocko/config"
@@ -85,14 +85,16 @@ func TestProduceConsume(t *testing.T) {
 		brokers = append(brokers, o.Addr().String())
 	}
 
-	retry.Run(t, func(r *retry.R) {
+	jocko.Retry(t, func() error {
 		client, err := sarama.NewClient(brokers, config)
+		defer client.Close()
 		if err != nil {
-			r.Fatalf("err: %v", err)
+			return err
 		}
 		if 3 != len(client.Brokers()) {
-			r.Fatalf("client didn't find the right number of brokers: %d", len(client.Brokers()))
+			return fmt.Errorf("client didn't find the right number of brokers: got %d, want %d", len(client.Brokers()), 3)
 		}
+		return nil
 	})
 
 	producer, err := sarama.NewSyncProducer(brokers, config)
@@ -145,14 +147,16 @@ func TestProduceConsume(t *testing.T) {
 		brokers = append(brokers, o.Addr().String())
 	}
 
-	retry.Run(t, func(r *retry.R) {
+	jocko.Retry(t, func() error {
 		client, err := sarama.NewClient(brokers, config)
+		defer client.Close()
 		if err != nil {
-			r.Fatalf("err: %v", err)
+			return err
 		}
 		if 2 != len(client.Brokers()) {
-			r.Fatalf("client didn't find the right number of brokers: %d", len(client.Brokers()))
+			return fmt.Errorf("client didn't find the right number of brokers: got %d, want %d", len(client.Brokers()), 2)
 		}
+		return nil
 	})
 
 	consumer, err = sarama.NewConsumer(brokers, config)
@@ -229,14 +233,16 @@ func TestConsumerGroup(t *testing.T) {
 		brokers = append(brokers, o.Addr().String())
 	}
 
-	retry.Run(t, func(r *retry.R) {
+	jocko.Retry(t, func() error {
 		client, err := sarama.NewClient(brokers, &config.Config)
+		defer client.Close()
 		if err != nil {
-			r.Fatalf("err: %v", err)
+			return err
 		}
 		if 3 != len(client.Brokers()) {
-			r.Fatalf("client didn't find the right number of brokers: got %d, want %d", len(client.Brokers()), 3)
+			return fmt.Errorf("client didn't find the right number of brokers: got %d, want %d", len(client.Brokers()), 3)
 		}
+		return nil
 	})
 
 	producer, err := sarama.NewSyncProducer(brokers, &config.Config)
@@ -286,14 +292,16 @@ func TestConsumerGroup(t *testing.T) {
 		brokers = append(brokers, o.Addr().String())
 	}
 
-	retry.Run(t, func(r *retry.R) {
+	jocko.Retry(t, func() error {
 		client, err := sarama.NewClient(brokers, &config.Config)
+		defer client.Close()
 		if err != nil {
-			r.Fatalf("err: %v", err)
+			return err
 		}
 		if 2 != len(client.Brokers()) {
-			r.Fatalf("client didn't find the right number of brokers: %d", len(client.Brokers()))
+			return fmt.Errorf("client didn't find the right number of brokers: got %d, want %d", len(client.Brokers()), 2)
 		}
+		return nil
 	})
 
 	consumer, err = cluster.NewConsumer(brokers, "consumer-group", []string{topic}, config)
