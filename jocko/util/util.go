@@ -3,7 +3,7 @@ package util
 import (
 	"fmt"
 
-	"github.com/cespare/xxhash"
+	"github.com/cespare/xxhash/v2"
 )
 
 func Dump(i interface{}) string {
@@ -13,7 +13,7 @@ func Dump(i interface{}) string {
 
 func Hash(s string) uint64 {
 	h := xxhash.New()
-	if _, err := h.Write([]byte(s)); err != nil {
+	if _, err := h.WriteString(s); err != nil {
 		panic(err)
 	}
 	return h.Sum64()

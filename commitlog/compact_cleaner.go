@@ -1,7 +1,7 @@
 package commitlog
 
 import (
-	"github.com/cespare/xxhash"
+	"github.com/cespare/xxhash/v2"
 )
 
 type CompactCleaner struct {
