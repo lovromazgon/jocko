@@ -13,7 +13,7 @@ require (
 	github.com/hashicorp/go-memdb v1.3.4
 	github.com/hashicorp/memberlist v0.5.1
 	github.com/hashicorp/raft v1.6.1
-	github.com/hashicorp/raft-boltdb v0.0.0-20191021154308-4207f1bf0617
+	github.com/hashicorp/raft-boltdb/v2 v2.3.0
 	github.com/hashicorp/serf v0.8.5
 	github.com/pkg/errors v0.8.1
 	github.com/satori/go.uuid v1.2.0
@@ -64,6 +64,7 @@ require (
 	github.com/rcrowley/go-metrics v0.0.0-20161128210544-1f30fe9094a5 // indirect
 	github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 // indirect
 	github.com/spf13/pflag v1.0.0 // indirect
+	go.etcd.io/bbolt v1.3.5 // indirect
 	go.opentelemetry.io/otel/metric v1.24.0 // indirect
 	golang.org/x/crypto v0.18.0 // indirect
 	golang.org/x/net v0.20.0 // indirect
