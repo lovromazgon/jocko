@@ -9,7 +9,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/tysontate/gommap"
+	"github.com/tysonmote/gommap"
 )
 
 var (
