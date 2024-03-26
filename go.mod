@@ -10,12 +10,12 @@ require (
 	github.com/cespare/xxhash/v2 v2.2.0
 	github.com/davecgh/go-spew v1.1.1
 	github.com/google/go-cmp v0.6.0
+	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-memdb v1.3.4
 	github.com/hashicorp/memberlist v0.5.1
 	github.com/hashicorp/raft v1.6.1
 	github.com/hashicorp/raft-boltdb/v2 v2.3.0
 	github.com/hashicorp/serf v0.10.1
-	github.com/satori/go.uuid v1.2.0
 	github.com/spf13/cobra v0.0.1
 	github.com/stretchr/testify v1.8.4
 	github.com/tj/go-gracefully v0.0.0-20141227061038-005c1d102f1b

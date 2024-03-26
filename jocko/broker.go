@@ -16,10 +16,10 @@ import (
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
+	"github.com/google/uuid"
 	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb/v2"
 	"github.com/hashicorp/serf/serf"
-	uuid "github.com/satori/go.uuid"
 	"github.com/travisjeffery/jocko/commitlog"
 	"github.com/travisjeffery/jocko/jocko/config"
 	"github.com/travisjeffery/jocko/jocko/fsm"
@@ -621,7 +621,7 @@ func (b *Broker) handleJoinGroup(ctx *Context, r *protocol.JoinGroupRequest) *pr
 	}
 	if r.MemberID == "" {
 		// for group member IDs -- can replace with something else
-		r.MemberID = ctx.Header().ClientID + "-" + uuid.NewV1().String()
+		r.MemberID = ctx.Header().ClientID + "-" + uuid.NewString()
 		group.Members[r.MemberID] = structs.Member{ID: r.MemberID}
 	}
 	if group.LeaderID == "" {
