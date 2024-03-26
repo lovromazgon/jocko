@@ -3,11 +3,11 @@ package commitlog
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"sync"
-
-	"github.com/pkg/errors"
 
 	"github.com/tysontate/gommap"
 )
@@ -75,11 +75,11 @@ func NewIndex(opts options) (idx *Index, err error) {
 	}
 	idx.file, err = os.OpenFile(opts.path, os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
-		return nil, errors.Wrap(err, "open file failed")
+		return nil, fmt.Errorf("open file failed: %w", err)
 	}
 	fi, err := idx.file.Stat()
 	if err != nil {
-		return nil, errors.Wrap(err, "stat file failed")
+		return nil, fmt.Errorf("stat file failed: %w", err)
 	} else if fi.Size() > 0 {
 		idx.position = fi.Size()
 	}
@@ -89,7 +89,7 @@ func NewIndex(opts options) (idx *Index, err error) {
 
 	idx.mmap, err = gommap.Map(idx.file.Fd(), gommap.PROT_READ|gommap.PROT_WRITE, gommap.MAP_SHARED)
 	if err != nil {
-		return nil, errors.Wrap(err, "mmap file failed")
+		return nil, fmt.Errorf("mmap file failed: %w", err)
 	}
 	return idx, nil
 }
@@ -98,7 +98,7 @@ func (idx *Index) WriteEntry(entry Entry) (err error) {
 	b := new(bytes.Buffer)
 	relEntry := newRelEntry(entry, idx.baseOffset)
 	if err = binary.Write(b, Encoding, relEntry); err != nil {
-		return errors.Wrap(err, "binary write failed")
+		return fmt.Errorf("binary write failed: %w", err)
 	}
 	idx.WriteAt(b.Bytes(), idx.position)
 	idx.mu.Lock()
@@ -119,7 +119,7 @@ func (idx *Index) ReadEntryAtFileOffset(e *Entry, fileOffset int64) (err error) 
 	rel := &relEntry{}
 	err = binary.Read(b, Encoding, rel)
 	if err != nil {
-		return errors.Wrap(err, "binary read failed")
+		return fmt.Errorf("binary read failed: %w", err)
 	}
 	idx.mu.RLock()
 	rel.fill(e, idx.baseOffset)
@@ -157,10 +157,10 @@ func (idx *Index) Sync() error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 	if err := idx.file.Sync(); err != nil {
-		return errors.Wrap(err, "file sync failed")
+		return fmt.Errorf("file sync failed: %w", err)
 	}
 	if err := idx.mmap.Sync(gommap.MS_SYNC); err != nil {
-		return errors.Wrap(err, "mmap sync failed")
+		return fmt.Errorf("mmap sync failed: %w", err)
 	}
 	return nil
 }
@@ -197,7 +197,7 @@ func (idx *Index) SanityCheck() error {
 	} else if idx.position%entryWidth != 0 {
 		return ErrIndexCorrupt
 	} else {
-		//read last entry
+		// read last entry
 		entry := new(Entry)
 		if err := idx.ReadEntryAtFileOffset(entry, idx.position-entryWidth); err != nil {
 			return err

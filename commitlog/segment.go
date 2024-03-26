@@ -2,14 +2,13 @@ package commitlog
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"sync"
-
-	"github.com/pkg/errors"
 )
 
 const (
@@ -48,7 +47,7 @@ func NewSegment(path string, baseOffset, maxBytes int64, args ...interface{}) (*
 	}
 	log, err := os.OpenFile(s.logPath(), os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
-		return nil, errors.Wrap(err, "open file failed")
+		return nil, fmt.Errorf("open file failed: %w", err)
 	}
 	s.log = log
 	s.writer = log
@@ -151,7 +150,7 @@ func (s *Segment) Write(p []byte) (n int, err error) {
 	defer s.Unlock()
 	n, err = s.writer.Write(p)
 	if err != nil {
-		return n, errors.Wrap(err, "log write failed")
+		return n, fmt.Errorf("log write failed: %w", err)
 	}
 	s.NextOffset++
 	s.Position += int64(n)
@@ -201,7 +200,7 @@ func (s *Segment) Replace(old *Segment) (err error) {
 	s.suffix = ""
 	log, err := os.OpenFile(s.logPath(), os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
-		return errors.Wrap(err, "open file failed")
+		return fmt.Errorf("open file failed: %w", err)
 	}
 	s.log = log
 	s.writer = log

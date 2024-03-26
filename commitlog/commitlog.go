@@ -2,6 +2,8 @@ package commitlog
 
 import (
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -9,8 +11,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-
-	"github.com/pkg/errors"
 )
 
 var (
@@ -87,7 +87,7 @@ func New(opts Options) (*CommitLog, error) {
 func (l *CommitLog) init() error {
 	err := os.MkdirAll(l.Path, 0755)
 	if err != nil {
-		return errors.Wrap(err, "mkdir failed")
+		return fmt.Errorf("mkdir failed: %w", err)
 	}
 	return nil
 }
@@ -95,7 +95,7 @@ func (l *CommitLog) init() error {
 func (l *CommitLog) open() error {
 	files, err := ioutil.ReadDir(l.Path)
 	if err != nil {
-		return errors.Wrap(err, "read dir failed")
+		return fmt.Errorf("read dir failed: %w", err)
 	}
 	for _, file := range files {
 		// if this file is an index file, make sure it has a corresponding .log file
@@ -106,7 +106,7 @@ func (l *CommitLog) open() error {
 					return err
 				}
 			} else if err != nil {
-				return errors.Wrap(err, "stat file failed")
+				return fmt.Errorf("stat file failed: %w", err)
 			}
 		} else if strings.HasSuffix(file.Name(), LogFileSuffix) {
 			offsetStr := strings.TrimSuffix(file.Name(), LogFileSuffix)

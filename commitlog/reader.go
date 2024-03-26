@@ -1,10 +1,9 @@
 package commitlog
 
 import (
+	"fmt"
 	"io"
 	"sync"
-
-	"github.com/pkg/errors"
 )
 
 type Reader struct {
@@ -54,7 +53,7 @@ func (l *CommitLog) NewReader(offset int64, maxBytes int32) (io.Reader, error) {
 		s, idx = findSegment(l.Segments(), offset)
 	}
 	if s == nil {
-		return nil, errors.Wrapf(ErrSegmentNotFound, "segments: %d, offset: %d", len(l.Segments()), offset)
+		return nil, fmt.Errorf("segments: %d, offset: %d, %w", len(l.Segments()), offset, ErrSegmentNotFound)
 	}
 	e, err := s.findEntry(offset)
 	if err != nil {
