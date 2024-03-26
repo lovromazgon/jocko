@@ -8,8 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Shopify/sarama"
-	cluster "github.com/bsm/sarama-cluster"
+	"github.com/IBM/sarama"
 	"github.com/stretchr/testify/require"
 	"github.com/travisjeffery/jocko/jocko"
 	"github.com/travisjeffery/jocko/jocko/config"
@@ -220,7 +219,7 @@ func TestConsumerGroup(t *testing.T) {
 	// give raft enough time to register the topic
 	time.Sleep(500 * time.Millisecond)
 
-	config := cluster.NewConfig()
+	config := sarama.NewConfig()
 	config.ClientID = "consumer-group-test"
 	config.Version = sarama.V0_10_0_0
 	config.ChannelBufferSize = 1
@@ -234,7 +233,7 @@ func TestConsumerGroup(t *testing.T) {
 	}
 
 	jocko.Retry(t, func() error {
-		client, err := sarama.NewClient(brokers, &config.Config)
+		client, err := sarama.NewClient(brokers, config)
 		defer client.Close()
 		if err != nil {
 			return err
@@ -245,7 +244,7 @@ func TestConsumerGroup(t *testing.T) {
 		return nil
 	})
 
-	producer, err := sarama.NewSyncProducer(brokers, &config.Config)
+	producer, err := sarama.NewSyncProducer(brokers, config)
 	if err != nil {
 		panic(err)
 	}
@@ -257,19 +256,22 @@ func TestConsumerGroup(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	consumer, err := cluster.NewConsumer(brokers, "consumer-group", []string{topic}, config)
-	if err != nil {
-		panic(err)
-	}
-	select {
-	case msg := <-consumer.Messages():
-		require.Equal(t, msg.Offset, offset)
-		require.Equal(t, pPartition, msg.Partition)
-		require.Equal(t, topic, msg.Topic)
-		require.Equal(t, 0, bytes.Compare(bValue, msg.Value))
-	case err := <-consumer.Errors():
-		require.NoError(t, err)
-	}
+	group, err := sarama.NewConsumerGroup(brokers, "consumer-group", config)
+	require.NoError(t, err)
+
+	err = group.Consume(context.Background(), []string{topic}, consumerGroupHandlerFunc(func(s sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
+		select {
+		case msg := <-claim.Messages():
+			require.Equal(t, msg.Offset, offset)
+			require.Equal(t, pPartition, msg.Partition)
+			require.Equal(t, topic, msg.Topic)
+			require.Equal(t, 0, bytes.Compare(bValue, msg.Value))
+		case err := <-group.Errors():
+			require.NoError(t, err)
+		}
+		return nil
+	}))
+	require.NoError(t, err)
 
 	switch controller {
 	case s1:
@@ -293,7 +295,7 @@ func TestConsumerGroup(t *testing.T) {
 	}
 
 	jocko.Retry(t, func() error {
-		client, err := sarama.NewClient(brokers, &config.Config)
+		client, err := sarama.NewClient(brokers, config)
 		defer client.Close()
 		if err != nil {
 			return err
@@ -304,26 +306,25 @@ func TestConsumerGroup(t *testing.T) {
 		return nil
 	})
 
-	consumer, err = cluster.NewConsumer(brokers, "consumer-group", []string{topic}, config)
-	if err != nil {
-		panic(err)
-	}
-	select {
-	case msg, more := <-consumer.Messages():
-		if !more {
-			break
-		}
-		// require.Equal(t, msg.Offset, offset)
-		// require.Equal(t, pPartition, msg.Partition)
-		require.Equal(t, topic, msg.Topic)
-		// require.Equal(t, 0, bytes.Compare(bValue, msg.Value))
-	case err, more := <-consumer.Errors():
-		if !more {
-			break
-		}
-		require.NoError(t, err)
-	}
+	group, err = sarama.NewConsumerGroup(brokers, "consumer-group", config)
+	require.NoError(t, err)
 
+	err = group.Consume(context.Background(), []string{topic}, consumerGroupHandlerFunc(func(s sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
+		select {
+		case msg, more := <-claim.Messages():
+			if !more {
+				break
+			}
+			require.Equal(t, topic, msg.Topic)
+		case err, more := <-group.Errors():
+			if !more {
+				break
+			}
+			require.NoError(t, err)
+		}
+		return nil
+	}))
+	require.NoError(t, err)
 }
 
 func BenchmarkServer(b *testing.B) {
@@ -420,4 +421,12 @@ func createTopic(t jocko.T, s1 *jocko.Server, other ...*jocko.Server) error {
 
 func strPointer(v string) *string {
 	return &v
+}
+
+type consumerGroupHandlerFunc func(sarama.ConsumerGroupSession, sarama.ConsumerGroupClaim) error
+
+func (consumerGroupHandlerFunc) Setup(_ sarama.ConsumerGroupSession) error   { return nil }
+func (consumerGroupHandlerFunc) Cleanup(_ sarama.ConsumerGroupSession) error { return nil }
+func (f consumerGroupHandlerFunc) ConsumeClaim(s sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
+	return f(s, claim)
 }

@@ -3,7 +3,7 @@ package jocko
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"sync/atomic"
 	"time"
 
@@ -28,7 +28,7 @@ func NewTestServer(t T, cbBroker func(cfg *config.Config), cbServer func(cfg *co
 	ports := dynaport.Get(4)
 	nodeID := atomic.AddInt32(&nodeNumber, 1)
 
-	tmpDir, err := ioutil.TempDir("", fmt.Sprintf("jocko-test-server-%d", nodeID))
+	tmpDir, err := os.MkdirTemp("", fmt.Sprintf("jocko-test-server-%d", nodeID))
 	if err != nil {
 		panic(err)
 	}
