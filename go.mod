@@ -18,7 +18,7 @@ require (
 	github.com/hashicorp/serf v0.10.1
 	github.com/spf13/cobra v1.8.0
 	github.com/stretchr/testify v1.9.0
-	github.com/travisjeffery/go-dynaport v0.0.0-20171203090423-24009f4f2f49
+	github.com/travisjeffery/go-dynaport v1.0.0
 	github.com/tysontate/gommap v0.0.0-20131202084435-e87a6e482c2c
 	github.com/ugorji/go v0.0.0-20180112141927-9831f2c3ac10
 	go.opentelemetry.io/otel v1.24.0
