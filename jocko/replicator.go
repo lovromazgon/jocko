@@ -6,13 +6,14 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/travisjeffery/jocko/log"
 	"github.com/travisjeffery/jocko/protocol"
+	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
 // Client is used to request other brokers.
 type client interface {
-	Fetch(fetchRequest *protocol.FetchRequest) (*protocol.FetchResponse, error)
-	CreateTopics(createRequest *protocol.CreateTopicRequests) (*protocol.CreateTopicsResponse, error)
-	LeaderAndISR(request *protocol.LeaderAndISRRequest) (*protocol.LeaderAndISRResponse, error)
+	Fetch(fetchRequest *kmsg.FetchRequest) (*kmsg.FetchResponse, error)
+	CreateTopics(createRequest *kmsg.CreateTopicsRequest) (*kmsg.CreateTopicsResponse, error)
+	LeaderAndISR(request *kmsg.LeaderAndISRRequest) (*kmsg.LeaderAndISRResponse, error)
 	// others
 }
 
@@ -59,21 +60,21 @@ func (r *Replicator) Replicate() {
 }
 
 func (r *Replicator) fetchMessages() {
-	var fetchRequest *protocol.FetchRequest
-	var fetchResponse *protocol.FetchResponse
+	var fetchRequest *kmsg.FetchRequest
+	var fetchResponse *kmsg.FetchResponse
 	var err error
 	for {
 		select {
 		case <-r.done:
 			return
 		default:
-			fetchRequest = &protocol.FetchRequest{
-				ReplicaID:   r.replica.BrokerID,
-				MaxWaitTime: r.config.MaxWaitTime,
-				MinBytes:    r.config.MinBytes,
-				Topics: []*protocol.FetchTopic{{
+			fetchRequest = &kmsg.FetchRequest{
+				ReplicaID:     r.replica.BrokerID,
+				MaxWaitMillis: int32(r.config.MaxWaitTime.Milliseconds()),
+				MinBytes:      r.config.MinBytes,
+				Topics: []kmsg.FetchRequestTopic{{
 					Topic: r.replica.Partition.Topic,
-					Partitions: []*protocol.FetchPartition{{
+					Partitions: []kmsg.FetchRequestTopicPartition{{
 						Partition:   r.replica.Partition.ID,
 						FetchOffset: r.offset,
 					}},
@@ -85,18 +86,18 @@ func (r *Replicator) fetchMessages() {
 				log.Error.Printf("replicator: fetch messages error: %s", err)
 				goto BACKOFF
 			}
-			for _, resp := range fetchResponse.Responses {
-				for _, p := range resp.PartitionResponses {
-					if p.ErrorCode != protocol.ErrNone.Code() {
+			for _, resp := range fetchResponse.Topics {
+				for _, p := range resp.Partitions {
+					if p.ErrorCode != 0 {
 						log.Error.Printf("replicator: partition response error: %d", p.ErrorCode)
 						goto BACKOFF
 					}
-					if p.RecordSet == nil {
+					if p.RecordBatches == nil {
 						goto BACKOFF
 					}
-					offset := int64(protocol.Encoding.Uint64(p.RecordSet[:8]))
+					offset := int64(protocol.Encoding.Uint64(p.RecordBatches[:8]))
 					if offset > r.offset {
-						r.msgs <- p.RecordSet
+						r.msgs <- p.RecordBatches
 						r.highwaterMarkOffset = p.HighWatermark
 						r.offset = offset
 					}

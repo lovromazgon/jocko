@@ -14,7 +14,7 @@ import (
 	"github.com/travisjeffery/jocko/jocko/metadata"
 	"github.com/travisjeffery/jocko/jocko/structs"
 	"github.com/travisjeffery/jocko/log"
-	"github.com/travisjeffery/jocko/protocol"
+	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
 const (
@@ -511,9 +511,9 @@ func (b *Broker) handleFailedMember(m serf.Member) error {
 		}
 	}
 
-	leaderAndISRReq := &protocol.LeaderAndISRRequest{
+	leaderAndISRReq := &kmsg.LeaderAndISRRequest{
 		ControllerID:    b.config.ID,
-		PartitionStates: make([]*protocol.PartitionState, 0, len(partitions)),
+		PartitionStates: make([]kmsg.LeaderAndISRRequestTopicPartition, 0, len(partitions)),
 		// TODO: LiveLeaders, ControllerEpoch
 	}
 	for _, p := range partitions {
@@ -552,7 +552,7 @@ func (b *Broker) handleFailedMember(m serf.Member) error {
 			return err
 		}
 		// TODO: need to send on leader and isr changes now i think
-		leaderAndISRReq.PartitionStates = append(leaderAndISRReq.PartitionStates, &protocol.PartitionState{
+		leaderAndISRReq.PartitionStates = append(leaderAndISRReq.PartitionStates, kmsg.LeaderAndISRRequestTopicPartition{
 			Topic:     p.Topic,
 			Partition: p.Partition,
 			// TODO: ControllerEpoch, LeaderEpoch, ZKVersion - lol

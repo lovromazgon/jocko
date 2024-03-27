@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-
 	"testing"
 
 	"github.com/IBM/sarama"
 	"github.com/travisjeffery/jocko/jocko"
 	"github.com/travisjeffery/jocko/jocko/config"
 	"github.com/travisjeffery/jocko/log"
-	"github.com/travisjeffery/jocko/protocol"
+	kerr "github.com/twmb/franz-go/pkg/kerr"
+	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
 type check struct {
@@ -133,8 +133,8 @@ func setup() (*jocko.Server, func()) {
 		fmt.Fprintf(os.Stderr, "error connecting to broker: %v\n", err)
 		os.Exit(1)
 	}
-	resp, err := conn.CreateTopics(&protocol.CreateTopicRequests{
-		Requests: []*protocol.CreateTopicRequest{{
+	resp, err := conn.CreateTopics(&kmsg.CreateTopicsRequest{
+		Topics: []kmsg.CreateTopicsRequestTopic{{
 			Topic:             topic,
 			NumPartitions:     numPartitions,
 			ReplicationFactor: 1,
@@ -144,9 +144,9 @@ func setup() (*jocko.Server, func()) {
 		fmt.Fprintf(os.Stderr, "failed with request to broker: %v\n", err)
 		os.Exit(1)
 	}
-	for _, topicErrCode := range resp.TopicErrorCodes {
-		if topicErrCode.ErrorCode != protocol.ErrNone.Code() && topicErrCode.ErrorCode != protocol.ErrTopicAlreadyExists.Code() {
-			err := protocol.Errs[topicErrCode.ErrorCode]
+	for _, topicErrCode := range resp.Topics {
+		if topicErrCode.ErrorCode != 0 && topicErrCode.ErrorCode != kerr.TopicAlreadyExists.Code {
+			err := kerr.ErrorForCode(topicErrCode.ErrorCode)
 			fmt.Fprintf(os.Stderr, "error code: %v\n", err)
 			os.Exit(1)
 		}

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/travisjeffery/jocko/protocol"
+	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
 type Context struct {
@@ -16,16 +17,16 @@ type Context struct {
 	err    error
 	header *protocol.RequestHeader
 	parent context.Context
-	req    interface{}
-	res    interface{}
+	req    kmsg.Request
+	res    *protocol.Response
 	vals   map[interface{}]interface{}
 }
 
-func (ctx *Context) Request() interface{} {
+func (ctx *Context) Request() kmsg.Request {
 	return ctx.req
 }
 
-func (ctx *Context) Response() interface{} {
+func (ctx *Context) Response() *protocol.Response {
 	return ctx.res
 }
 

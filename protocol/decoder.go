@@ -25,6 +25,7 @@ type PacketDecoder interface {
 	StringArray() ([]string, error)
 	Push(pd PushDecoder) error
 	Pop() error
+	Raw() []byte
 	remaining() int
 }
 
@@ -65,6 +66,10 @@ func NewDecoder(b []byte) *ByteDecoder {
 }
 
 func (d *ByteDecoder) Bool() (bool, error) {
+	if d.remaining() == 0 {
+		d.off = len(d.b)
+		return false, ErrInsufficientData
+	}
 	i, err := d.Int8()
 	if err != nil {
 		return false, err
@@ -73,12 +78,20 @@ func (d *ByteDecoder) Bool() (bool, error) {
 }
 
 func (d *ByteDecoder) Int8() (int8, error) {
+	if d.remaining() == 0 {
+		d.off = len(d.b)
+		return -1, ErrInsufficientData
+	}
 	tmp := int8(d.b[d.off])
 	d.off++
 	return tmp, nil
 }
 
 func (d *ByteDecoder) Int16() (int16, error) {
+	if d.remaining() < 2 {
+		d.off = len(d.b)
+		return -1, ErrInsufficientData
+	}
 	tmp := int16(Encoding.Uint16(d.b[d.off:]))
 	d.off += 2
 	return tmp, nil
@@ -216,9 +229,12 @@ func (d *ByteDecoder) Int32Array() ([]int32, error) {
 	if n == 0 {
 		return nil, nil
 	}
-
 	if n < 0 {
 		return nil, ErrInvalidArrayLength
+	}
+	if n > d.remaining() {
+		d.off = len(d.b)
+		return nil, ErrInsufficientData
 	}
 
 	ret := make([]int32, n)
@@ -245,9 +261,12 @@ func (d *ByteDecoder) Int64Array() ([]int64, error) {
 	if n == 0 {
 		return nil, nil
 	}
-
 	if n < 0 {
 		return nil, ErrInvalidArrayLength
+	}
+	if n > d.remaining() {
+		d.off = len(d.b)
+		return nil, ErrInsufficientData
 	}
 
 	ret := make([]int64, n)
@@ -269,9 +288,12 @@ func (d *ByteDecoder) StringArray() ([]string, error) {
 	if n == 0 {
 		return nil, nil
 	}
-
 	if n < 0 {
 		return nil, ErrInvalidArrayLength
+	}
+	if n > d.remaining() {
+		d.off = len(d.b)
+		return nil, ErrInsufficientData
 	}
 
 	ret := make([]string, n)
@@ -305,4 +327,9 @@ func (d *ByteDecoder) Pop() error {
 
 func (d *ByteDecoder) remaining() int {
 	return len(d.b) - d.off
+}
+
+// Raw returns the remaining unread raw bytes.
+func (d *ByteDecoder) Raw() []byte {
+	return d.b[d.off:]
 }

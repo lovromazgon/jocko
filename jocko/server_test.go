@@ -8,12 +8,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/twmb/franz-go/pkg/kmsg"
+
 	"github.com/IBM/sarama"
 	"github.com/stretchr/testify/require"
 	"github.com/travisjeffery/jocko/jocko"
 	"github.com/travisjeffery/jocko/jocko/config"
 	"github.com/travisjeffery/jocko/log"
-	"github.com/travisjeffery/jocko/protocol"
 )
 
 const (
@@ -402,18 +403,20 @@ func createTopic(t jocko.T, s1 *jocko.Server, other ...*jocko.Server) error {
 	for _, o := range other {
 		assignment = append(assignment, o.ID())
 	}
-	_, err = conn.CreateTopics(&protocol.CreateTopicRequests{
-		Timeout: 15 * time.Second,
-		Requests: []*protocol.CreateTopicRequest{{
+	_, err = conn.CreateTopics(&kmsg.CreateTopicsRequest{
+		TimeoutMillis: int32((15 * time.Second).Milliseconds()),
+		Topics: []kmsg.CreateTopicsRequestTopic{{
 			Topic:             topic,
 			NumPartitions:     int32(1),
 			ReplicationFactor: int16(3),
-			ReplicaAssignment: map[int32][]int32{
-				0: assignment,
-			},
-			Configs: map[string]*string{
-				"config_key": strPointer("config_val"),
-			},
+			ReplicaAssignment: []kmsg.CreateTopicsRequestTopicReplicaAssignment{{
+				Partition: 0,
+				Replicas:  assignment,
+			}},
+			Configs: []kmsg.CreateTopicsRequestTopicConfig{{
+				Name:  "config_key",
+				Value: strPointer("config_val"),
+			}},
 		}},
 	})
 	return err

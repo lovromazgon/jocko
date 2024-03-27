@@ -28,6 +28,8 @@ import (
 	"github.com/travisjeffery/jocko/jocko/util"
 	"github.com/travisjeffery/jocko/log"
 	"github.com/travisjeffery/jocko/protocol"
+	"github.com/twmb/franz-go/pkg/kerr"
+	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -101,7 +103,7 @@ func NewBroker(config *config.Config) (*Broker, error) {
 		replicaLookup:    NewReplicaLookup(),
 		reconcileCh:      make(chan serf.Member, 32),
 		tracer:           otel.Tracer("broker"),
-		logStateInterval: time.Millisecond * 250,
+		logStateInterval: time.Second,
 	}
 
 	if err := b.setupRaft(); err != nil {
@@ -139,50 +141,50 @@ func (b *Broker) Run(ctx context.Context, requests <-chan *Context, responses ch
 
 			trace.SpanFromContext(reqCtx).End()
 
-			var res protocol.ResponseBody
+			var res kmsg.Response
 
 			switch req := reqCtx.req.(type) {
-			case *protocol.ProduceRequest:
+			case *kmsg.ProduceRequest:
 				res = b.handleProduce(reqCtx, req)
-			case *protocol.FetchRequest:
+			case *kmsg.FetchRequest:
 				res = b.handleFetch(reqCtx, req)
-			case *protocol.OffsetsRequest:
-				res = b.handleOffsets(reqCtx, req)
-			case *protocol.MetadataRequest:
+			case *kmsg.ListOffsetsRequest:
+				res = b.handleListOffsets(reqCtx, req)
+			case *kmsg.MetadataRequest:
 				res = b.handleMetadata(reqCtx, req)
-			case *protocol.LeaderAndISRRequest:
+			case *kmsg.LeaderAndISRRequest:
 				res = b.handleLeaderAndISR(reqCtx, req)
-			case *protocol.StopReplicaRequest:
+			case *kmsg.StopReplicaRequest:
 				res = b.handleStopReplica(reqCtx, req)
-			case *protocol.UpdateMetadataRequest:
+			case *kmsg.UpdateMetadataRequest:
 				res = b.handleUpdateMetadata(reqCtx, req)
-			case *protocol.ControlledShutdownRequest:
+			case *kmsg.ControlledShutdownRequest:
 				res = b.handleControlledShutdown(reqCtx, req)
-			case *protocol.OffsetCommitRequest:
+			case *kmsg.OffsetCommitRequest:
 				res = b.handleOffsetCommit(reqCtx, req)
-			case *protocol.OffsetFetchRequest:
+			case *kmsg.OffsetFetchRequest:
 				res = b.handleOffsetFetch(reqCtx, req)
-			case *protocol.FindCoordinatorRequest:
+			case *kmsg.FindCoordinatorRequest:
 				res = b.handleFindCoordinator(reqCtx, req)
-			case *protocol.JoinGroupRequest:
+			case *kmsg.JoinGroupRequest:
 				res = b.handleJoinGroup(reqCtx, req)
-			case *protocol.HeartbeatRequest:
+			case *kmsg.HeartbeatRequest:
 				res = b.handleHeartbeat(reqCtx, req)
-			case *protocol.LeaveGroupRequest:
+			case *kmsg.LeaveGroupRequest:
 				res = b.handleLeaveGroup(reqCtx, req)
-			case *protocol.SyncGroupRequest:
+			case *kmsg.SyncGroupRequest:
 				res = b.handleSyncGroup(reqCtx, req)
-			case *protocol.DescribeGroupsRequest:
+			case *kmsg.DescribeGroupsRequest:
 				res = b.handleDescribeGroups(reqCtx, req)
-			case *protocol.ListGroupsRequest:
+			case *kmsg.ListGroupsRequest:
 				res = b.handleListGroups(reqCtx, req)
-			case *protocol.SaslHandshakeRequest:
-				res = b.handleSaslHandshake(reqCtx, req)
-			case *protocol.APIVersionsRequest:
+			case *kmsg.SASLHandshakeRequest:
+				res = b.handleSASLHandshake(reqCtx, req)
+			case *kmsg.ApiVersionsRequest:
 				res = b.handleAPIVersions(reqCtx, req)
-			case *protocol.CreateTopicRequests:
-				res = b.handleCreateTopic(reqCtx, req)
-			case *protocol.DeleteTopicsRequest:
+			case *kmsg.CreateTopicsRequest:
+				res = b.handleCreateTopics(reqCtx, req)
+			case *kmsg.DeleteTopicsRequest:
 				res = b.handleDeleteTopics(reqCtx, req)
 			}
 
@@ -208,11 +210,11 @@ DONE:
 
 // Join is used to have the broker join the gossip ring.
 // The given address should be another broker listening on the Serf address.
-func (b *Broker) JoinLAN(addrs ...string) protocol.Error {
+func (b *Broker) JoinLAN(addrs ...string) error {
 	if _, err := b.serf.Join(addrs, true); err != nil {
-		return protocol.ErrUnknown.WithErr(err)
+		return err
 	}
-	return protocol.ErrNone
+	return nil
 }
 
 // req handling.
@@ -223,94 +225,94 @@ func (b *Broker) span(ctx *Context, op string) trace.Span {
 	return sp
 }
 
-var apiVersions = &protocol.APIVersionsResponse{APIVersions: protocol.APIVersions}
-
-func (b *Broker) handleAPIVersions(ctx *Context, req *protocol.APIVersionsRequest) *protocol.APIVersionsResponse {
+func (b *Broker) handleAPIVersions(ctx *Context, req *kmsg.ApiVersionsRequest) *kmsg.ApiVersionsResponse {
 	sp := b.span(ctx, "api versions")
 	defer sp.End()
-	return apiVersions
+	res := &kmsg.ApiVersionsResponse{ApiKeys: protocol.APIVersions}
+	res.SetVersion(req.GetVersion())
+	return res
 }
 
-func (b *Broker) handleCreateTopic(ctx *Context, reqs *protocol.CreateTopicRequests) *protocol.CreateTopicsResponse {
+func (b *Broker) handleCreateTopics(ctx *Context, reqs *kmsg.CreateTopicsRequest) *kmsg.CreateTopicsResponse {
 	sp := b.span(ctx, "create topic")
 	defer sp.End()
-	res := new(protocol.CreateTopicsResponse)
-	res.APIVersion = reqs.Version()
-	res.TopicErrorCodes = make([]*protocol.TopicErrorCode, len(reqs.Requests))
+	res := new(kmsg.CreateTopicsResponse)
+	res.SetVersion(reqs.GetVersion())
+	res.Topics = make([]kmsg.CreateTopicsResponseTopic, len(reqs.Topics))
 	isController := b.isController()
 	sp.SetAttributes(attribute.Bool("is controller", isController))
-	for i, req := range reqs.Requests {
+	for i, req := range reqs.Topics {
 		if !isController {
-			res.TopicErrorCodes[i] = &protocol.TopicErrorCode{
+			res.Topics[i] = kmsg.CreateTopicsResponseTopic{
 				Topic:     req.Topic,
-				ErrorCode: protocol.ErrNotController.Code(),
+				ErrorCode: kerr.NotController.Code,
 			}
 			continue
 		}
 		if req.ReplicationFactor > int16(len(b.LANMembers())) {
-			res.TopicErrorCodes[i] = &protocol.TopicErrorCode{
+			res.Topics[i] = kmsg.CreateTopicsResponseTopic{
 				Topic:     req.Topic,
-				ErrorCode: protocol.ErrInvalidReplicationFactor.Code(),
+				ErrorCode: kerr.InvalidReplicationFactor.Code,
 			}
 			continue
 		}
-		err := b.withTimeout(reqs.Timeout, func() protocol.Error {
+		err := b.withTimeout(time.Millisecond*time.Duration(reqs.Timeout()), func() error {
 			return b.createTopic(ctx, req)
 		})
-		res.TopicErrorCodes[i] = &protocol.TopicErrorCode{
+		res.Topics[i] = kmsg.CreateTopicsResponseTopic{
 			Topic:     req.Topic,
-			ErrorCode: err.Code(),
+			ErrorCode: errorCodeFromErr(err),
 		}
 
 	}
 	return res
 }
 
-func (b *Broker) handleDeleteTopics(ctx *Context, reqs *protocol.DeleteTopicsRequest) *protocol.DeleteTopicsResponse {
+func (b *Broker) handleDeleteTopics(ctx *Context, reqs *kmsg.DeleteTopicsRequest) *kmsg.DeleteTopicsResponse {
 	sp := b.span(ctx, "delete topics")
 	defer sp.End()
-	res := new(protocol.DeleteTopicsResponse)
-	res.APIVersion = reqs.Version()
-	res.TopicErrorCodes = make([]*protocol.TopicErrorCode, len(reqs.Topics))
+	res := new(kmsg.DeleteTopicsResponse)
+	res.SetVersion(reqs.GetVersion())
+	res.Topics = make([]kmsg.DeleteTopicsResponseTopic, len(reqs.Topics))
 	isController := b.isController()
 	for i, topic := range reqs.Topics {
 		if !isController {
-			res.TopicErrorCodes[i] = &protocol.TopicErrorCode{
-				Topic:     topic,
-				ErrorCode: protocol.ErrNotController.Code(),
+			res.Topics[i] = kmsg.DeleteTopicsResponseTopic{
+				Topic:     topic.Topic,
+				ErrorCode: kerr.NotController.Code,
 			}
 			continue
 		}
-		err := b.withTimeout(reqs.Timeout, func() protocol.Error {
+		err := b.withTimeout(time.Millisecond*time.Duration(reqs.Timeout()), func() error {
 			// TODO: this will delete from fsm -- need to delete associated partitions, etc.
 			_, err := b.raftApply(structs.DeregisterTopicRequestType, structs.DeregisterTopicRequest{
 				structs.Topic{
-					Topic: topic,
+					Topic: *topic.Topic,
 				},
 			})
 			if err != nil {
-				return protocol.ErrUnknown.WithErr(err)
+				return err
 			}
-			return protocol.ErrNone
+			return nil
 		})
-		res.TopicErrorCodes[i] = &protocol.TopicErrorCode{
-			Topic:     topic,
-			ErrorCode: err.Code(),
+		res.Topics[i] = kmsg.DeleteTopicsResponseTopic{
+			Topic:     topic.Topic,
+			ErrorCode: errorCodeFromErr(err),
 		}
 	}
 	return res
 }
 
-func (b *Broker) handleLeaderAndISR(ctx *Context, req *protocol.LeaderAndISRRequest) *protocol.LeaderAndISRResponse {
+func (b *Broker) handleLeaderAndISR(ctx *Context, req *kmsg.LeaderAndISRRequest) *kmsg.LeaderAndISRResponse {
 	sp := b.span(ctx, "leader and isr")
 	defer sp.End()
-	res := &protocol.LeaderAndISRResponse{
-		Partitions: make([]*protocol.LeaderAndISRPartition, len(req.PartitionStates)),
+	res := &kmsg.LeaderAndISRResponse{
+		Partitions: make([]kmsg.LeaderAndISRResponseTopicPartition, len(req.PartitionStates)),
 	}
-	res.APIVersion = req.Version()
-	setErr := func(i int, p *protocol.PartitionState, err protocol.Error) {
-		res.Partitions[i] = &protocol.LeaderAndISRPartition{
-			ErrorCode: err.Code(),
+	res.Version = req.Version
+	setErr := func(i int, p kmsg.LeaderAndISRRequestTopicPartition, err error) {
+		res.Partitions[i] = kmsg.LeaderAndISRResponseTopicPartition{
+			ErrorCode: errorCodeFromErr(err),
 			Partition: p.Partition,
 			Topic:     p.Topic,
 		}
@@ -336,49 +338,51 @@ func (b *Broker) handleLeaderAndISR(ctx *Context, req *protocol.LeaderAndISRRequ
 		if p.Leader == b.config.ID && (replica.Partition.Leader == b.config.ID) {
 			// is command asking this broker to be the new leader for p and this broker is not already the leader for
 
-			if err := b.startReplica(replica); err != protocol.ErrNone {
+			if err := b.startReplica(replica); err != nil {
 				setErr(i, p, err)
 				continue
 			}
 
-			if err := b.becomeLeader(replica, p); err != protocol.ErrNone {
+			if err := b.becomeLeader(replica, p); err != nil {
 				setErr(i, p, err)
 				continue
 			}
 		} else if contains(p.Replicas, b.config.ID) && (p.Leader != b.config.ID) {
 			// is command asking this broker to follow leader who it isn't a leader of already
-			if err := b.startReplica(replica); err != protocol.ErrNone {
+			if err := b.startReplica(replica); err != nil {
 				setErr(i, p, err)
 				continue
 			}
 
-			if err := b.becomeFollower(replica, p); err != protocol.ErrNone {
+			if err := b.becomeFollower(replica, p); err != nil {
 				setErr(i, p, err)
 				continue
 			}
 		}
-		res.Partitions[i] = &protocol.LeaderAndISRPartition{Partition: p.Partition, Topic: p.Topic, ErrorCode: protocol.ErrNone.Code()}
+		res.Partitions[i] = kmsg.LeaderAndISRResponseTopicPartition{Partition: p.Partition, Topic: p.Topic}
 	}
 	return res
 }
 
-func (b *Broker) handleOffsets(ctx *Context, req *protocol.OffsetsRequest) *protocol.OffsetsResponse {
+func (b *Broker) handleListOffsets(ctx *Context, req *kmsg.ListOffsetsRequest) *kmsg.ListOffsetsResponse {
 	sp := b.span(ctx, "offsets")
 	defer sp.End()
-	res := new(protocol.OffsetsResponse)
-	res.APIVersion = req.Version()
-	res.Responses = make([]*protocol.OffsetResponse, len(req.Topics))
+	res := new(kmsg.ListOffsetsResponse)
+	res.SetVersion(req.GetVersion())
+	res.Topics = make([]kmsg.ListOffsetsResponseTopic, len(req.Topics))
 	for i, t := range req.Topics {
-		res.Responses[i] = new(protocol.OffsetResponse)
-		res.Responses[i].Topic = t.Topic
-		res.Responses[i].PartitionResponses = make([]*protocol.PartitionResponse, 0, len(t.Partitions))
+		res.Topics[i] = kmsg.ListOffsetsResponseTopic{
+			Topic:      t.Topic,
+			Partitions: make([]kmsg.ListOffsetsResponseTopicPartition, 0, len(t.Partitions)),
+		}
 		for _, p := range t.Partitions {
-			pres := new(protocol.PartitionResponse)
-			pres.Partition = p.Partition
+			pres := kmsg.ListOffsetsResponseTopicPartition{
+				Partition: p.Partition,
+			}
 			replica, err := b.replicaLookup.Replica(t.Topic, p.Partition)
 			if err != nil {
 				// TODO: have replica lookup return an error with a code
-				pres.ErrorCode = protocol.ErrUnknown.Code()
+				pres.ErrorCode = errorCodeFromErr(err)
 				continue
 			}
 			var offset int64
@@ -388,68 +392,68 @@ func (b *Broker) handleOffsets(ctx *Context, req *protocol.OffsetsRequest) *prot
 				// TODO: this is nil because i'm not sending the leader and isr requests telling the new leader to start the replica and instantiate the log...
 				offset = replica.Log.NewestOffset()
 			}
-			pres.Offsets = []int64{offset}
-			res.Responses[i].PartitionResponses = append(res.Responses[i].PartitionResponses, pres)
+			pres.Offset = offset
+			res.Topics[i].Partitions = append(res.Topics[i].Partitions, pres)
 		}
 	}
 	return res
 }
 
-func (b *Broker) handleProduce(ctx *Context, req *protocol.ProduceRequest) *protocol.ProduceResponse {
+func (b *Broker) handleProduce(ctx *Context, req *kmsg.ProduceRequest) *kmsg.ProduceResponse {
 	sp := b.span(ctx, "produce")
 	defer sp.End()
-	res := new(protocol.ProduceResponse)
-	res.APIVersion = req.Version()
-	res.Responses = make([]*protocol.ProduceTopicResponse, len(req.TopicData))
+	res := new(kmsg.ProduceResponse)
+	res.SetVersion(req.GetVersion())
+	res.Topics = make([]kmsg.ProduceResponseTopic, len(req.Topics))
 	log.Debug.Printf("broker/%d: produce: %#v", b.config.ID, req)
-	for i, td := range req.TopicData {
+	for i, td := range req.Topics {
 		log.Debug.Printf("broker/%d: produce to partition: %d: %v", b.config.ID, i, td)
-		tres := make([]*protocol.ProducePartitionResponse, len(td.Data))
-		for j, p := range td.Data {
-			pres := &protocol.ProducePartitionResponse{}
+		tres := make([]kmsg.ProduceResponseTopicPartition, len(td.Partitions))
+		for j, p := range td.Partitions {
+			pres := kmsg.ProduceResponseTopicPartition{}
 			pres.Partition = p.Partition
-			err := b.withTimeout(req.Timeout, func() protocol.Error {
+			err := b.withTimeout(time.Millisecond*time.Duration(req.Timeout()), func() error {
 				state := b.fsm.State()
 				_, t, err := state.GetTopic(td.Topic)
 				if err != nil {
 					log.Error.Printf("broker/%d: produce to partition error: get topic: %s", b.config.ID, err)
-					return protocol.ErrUnknown.WithErr(err)
+					return err
 				}
 				if t == nil {
 					log.Error.Printf("broker/%d: produce to partition error: unknown topic", b.config.ID)
-					return protocol.ErrUnknownTopicOrPartition
+					return kerr.UnknownTopicOrPartition
 				}
 				replica, err := b.replicaLookup.Replica(td.Topic, p.Partition)
 				if err != nil || replica == nil || replica.Log == nil {
 					log.Error.Printf("broker/%d: produce to partition error: %s", b.config.ID, err)
 					pres.Partition = p.Partition
-					return protocol.ErrReplicaNotAvailable
+					return kerr.ReplicaNotAvailable
 				}
-				offset, appendErr := replica.Log.Append(p.RecordSet)
-				if appendErr != nil {
+				offset, err := replica.Log.Append(p.Records)
+				if err != nil {
 					log.Error.Printf("broker/%d: log append error: %s", b.config.ID, err)
-					return protocol.ErrUnknown
+					return err
 				}
 				pres.BaseOffset = offset
-				pres.LogAppendTime = time.Now()
-				return protocol.ErrNone
+				pres.LogAppendTime = time.Now().UnixMilli()
+				return nil
 			})
-			pres.ErrorCode = err.Code()
+			pres.ErrorCode = errorCodeFromErr(err)
 			tres[j] = pres
 		}
-		res.Responses[i] = &protocol.ProduceTopicResponse{
-			Topic:              td.Topic,
-			PartitionResponses: tres,
+		res.Topics[i] = kmsg.ProduceResponseTopic{
+			Topic:      td.Topic,
+			Partitions: tres,
 		}
 	}
 	return res
 }
 
-func (b *Broker) handleMetadata(ctx *Context, req *protocol.MetadataRequest) *protocol.MetadataResponse {
+func (b *Broker) handleMetadata(ctx *Context, req *kmsg.MetadataRequest) *kmsg.MetadataResponse {
 	sp := b.span(ctx, "metadata")
 	defer sp.End()
 	state := b.fsm.State()
-	brokers := make([]*protocol.Broker, 0, len(b.LANMembers()))
+	brokers := make([]kmsg.MetadataResponseBroker, 0, len(b.LANMembers()))
 
 	_, nodes, err := state.GetNodes()
 	if err != nil {
@@ -474,86 +478,84 @@ func (b *Broker) handleMetadata(ctx *Context, req *protocol.MetadataRequest) *pr
 		if !ok {
 			continue
 		}
-		brokers = append(brokers, &protocol.Broker{
+		brokers = append(brokers, kmsg.MetadataResponseBroker{
 			NodeID: m.ID.Int32(),
 			Host:   m.Host(),
 			Port:   m.Port(),
 		})
 	}
-	var topicMetadata []*protocol.TopicMetadata
-	topicMetadataFn := func(topic *structs.Topic, err protocol.Error) *protocol.TopicMetadata {
-		if err != protocol.ErrNone {
-			return &protocol.TopicMetadata{
-				TopicErrorCode: err.Code(),
-				Topic:          topic.Topic,
+	var topicMetadata []kmsg.MetadataResponseTopic
+	topicMetadataFn := func(topic *structs.Topic, err error) kmsg.MetadataResponseTopic {
+		if err != nil {
+			return kmsg.MetadataResponseTopic{
+				ErrorCode: errorCodeFromErr(err),
+				Topic:     &topic.Topic,
 			}
 		}
-		partitionMetadata := make([]*protocol.PartitionMetadata, 0, len(topic.Partitions))
+		partitionMetadata := make([]kmsg.MetadataResponseTopicPartition, 0, len(topic.Partitions))
 		for id := range topic.Partitions {
 			_, p, err := state.GetPartition(topic.Topic, id)
 			if err != nil {
-				partitionMetadata = append(partitionMetadata, &protocol.PartitionMetadata{
-					PartitionID:        id,
-					PartitionErrorCode: protocol.ErrUnknown.Code(),
+				partitionMetadata = append(partitionMetadata, kmsg.MetadataResponseTopicPartition{
+					Partition: id,
+					ErrorCode: errorCodeFromErr(err),
 				})
 				continue
 			}
 			if p == nil {
-				partitionMetadata = append(partitionMetadata, &protocol.PartitionMetadata{
-					PartitionID:        id,
-					PartitionErrorCode: protocol.ErrUnknownTopicOrPartition.Code(),
+				partitionMetadata = append(partitionMetadata, kmsg.MetadataResponseTopicPartition{
+					Partition: id,
+					ErrorCode: kerr.UnknownTopicOrPartition.Code,
 				})
 				continue
 			}
-			partitionMetadata = append(partitionMetadata, &protocol.PartitionMetadata{
-				PartitionID:        p.ID,
-				PartitionErrorCode: protocol.ErrNone.Code(),
-				Leader:             p.Leader,
-				Replicas:           p.AR,
-				ISR:                p.ISR,
+			partitionMetadata = append(partitionMetadata, kmsg.MetadataResponseTopicPartition{
+				Partition: p.ID,
+				Leader:    p.Leader,
+				Replicas:  p.AR,
+				ISR:       p.ISR,
 			})
 		}
-		return &protocol.TopicMetadata{
-			TopicErrorCode:    protocol.ErrNone.Code(),
-			Topic:             topic.Topic,
-			PartitionMetadata: partitionMetadata,
+		return kmsg.MetadataResponseTopic{
+			Topic:      &topic.Topic,
+			Partitions: partitionMetadata,
 		}
 	}
 	if len(req.Topics) == 0 {
 		// Respond with metadata for all topics
 		// how to handle err here?
 		_, topics, _ := state.GetTopics()
-		topicMetadata = make([]*protocol.TopicMetadata, 0, len(topics))
+		topicMetadata = make([]kmsg.MetadataResponseTopic, 0, len(topics))
 		for _, topic := range topics {
-			topicMetadata = append(topicMetadata, topicMetadataFn(topic, protocol.ErrNone))
+			topicMetadata = append(topicMetadata, topicMetadataFn(topic, nil))
 		}
 	} else {
-		topicMetadata = make([]*protocol.TopicMetadata, 0, len(req.Topics))
-		for _, topicName := range req.Topics {
-			_, topic, err := state.GetTopic(topicName)
+		topicMetadata = make([]kmsg.MetadataResponseTopic, 0, len(req.Topics))
+		for _, t := range req.Topics {
+			_, topic, err := state.GetTopic(*t.Topic)
 			if topic == nil {
-				topicMetadata = append(topicMetadata, topicMetadataFn(&structs.Topic{Topic: topicName}, protocol.ErrUnknownTopicOrPartition))
+				topicMetadata = append(topicMetadata, topicMetadataFn(&structs.Topic{Topic: *t.Topic}, kerr.UnknownTopicOrPartition))
 			} else if err != nil {
-				topicMetadata = append(topicMetadata, topicMetadataFn(&structs.Topic{Topic: topicName}, protocol.ErrUnknown.WithErr(err)))
+				topicMetadata = append(topicMetadata, topicMetadataFn(&structs.Topic{Topic: *t.Topic}, err))
 			} else {
-				topicMetadata = append(topicMetadata, topicMetadataFn(topic, protocol.ErrNone))
+				topicMetadata = append(topicMetadata, topicMetadataFn(topic, nil))
 			}
 		}
 	}
-	res := &protocol.MetadataResponse{
-		Brokers:       brokers,
-		TopicMetadata: topicMetadata,
+	res := &kmsg.MetadataResponse{
+		Brokers: brokers,
+		Topics:  topicMetadata,
 	}
-	res.APIVersion = req.Version()
+	res.SetVersion(req.GetVersion())
 	return res
 }
 
-func (b *Broker) handleFindCoordinator(ctx *Context, req *protocol.FindCoordinatorRequest) *protocol.FindCoordinatorResponse {
+func (b *Broker) handleFindCoordinator(ctx *Context, req *kmsg.FindCoordinatorRequest) *kmsg.FindCoordinatorResponse {
 	sp := b.span(ctx, "find coordinator")
 	defer sp.End()
 
-	res := &protocol.FindCoordinatorResponse{}
-	res.APIVersion = req.Version()
+	res := &kmsg.FindCoordinatorResponse{}
+	res.SetVersion(req.GetVersion())
 
 	var broker *metadata.Broker
 	var p *structs.Partition
@@ -571,41 +573,41 @@ func (b *Broker) handleFindCoordinator(ctx *Context, req *protocol.FindCoordinat
 		goto ERROR
 	}
 	if p == nil {
-		res.ErrorCode = protocol.ErrUnknownTopicOrPartition.Code()
+		res.ErrorCode = kerr.UnknownTopicOrPartition.Code
 		goto ERROR
 	}
 	broker = b.brokerLookup.BrokerByID(raft.ServerID(fmt.Sprintf("%d", p.Leader)))
 
-	res.Coordinator.NodeID = broker.ID.Int32()
-	res.Coordinator.Host = broker.Host()
-	res.Coordinator.Port = broker.Port()
+	res.NodeID = broker.ID.Int32()
+	res.Host = broker.Host()
+	res.Port = broker.Port()
 
 	return res
 
 ERROR:
 	// todo: which err code to use?
 	if res.ErrorCode == 0 {
-		res.ErrorCode = protocol.ErrUnknown.Code()
+		res.ErrorCode = errorCodeFromErr(err)
 	}
 	log.Error.Printf("broker/%d: broker: %v: coordinator error: %s", b.config.ID, broker, err)
 
 	return res
 }
 
-func (b *Broker) handleJoinGroup(ctx *Context, r *protocol.JoinGroupRequest) *protocol.JoinGroupResponse {
+func (b *Broker) handleJoinGroup(ctx *Context, r *kmsg.JoinGroupRequest) *kmsg.JoinGroupResponse {
 	sp := b.span(ctx, "join group")
 	defer sp.End()
 
-	res := &protocol.JoinGroupResponse{}
-	res.APIVersion = r.Version()
+	res := &kmsg.JoinGroupResponse{}
+	res.SetVersion(r.GetVersion())
 
 	// // TODO: distribute this.
 	state := b.fsm.State()
 
-	_, group, err := state.GetGroup(r.GroupID)
+	_, group, err := state.GetGroup(r.Group)
 	if err != nil {
 		log.Error.Printf("broker/%d: get group error: %s", b.config.ID, err)
-		res.ErrorCode = protocol.ErrUnknown.Code()
+		res.ErrorCode = errorCodeFromErr(err)
 		return res
 	}
 	// TODO: only try to create the group if the group is not unknown AND
@@ -614,7 +616,7 @@ func (b *Broker) handleJoinGroup(ctx *Context, r *protocol.JoinGroupRequest) *pr
 	if group == nil {
 		// group doesn't exist so let's create it
 		group = &structs.Group{
-			Group:       r.GroupID,
+			Group:       r.Group,
 			Coordinator: b.config.ID,
 			Members:     make(map[string]structs.Member),
 		}
@@ -632,18 +634,18 @@ func (b *Broker) handleJoinGroup(ctx *Context, r *protocol.JoinGroupRequest) *pr
 	})
 	if err != nil {
 		log.Error.Printf("broker/%d: register group error: %s", b.config.ID, err)
-		res.ErrorCode = protocol.ErrUnknown.Code()
+		res.ErrorCode = errorCodeFromErr(err)
 		return res
 	}
 
-	res.GenerationID = 0
+	res.Generation = 0
 	res.LeaderID = group.LeaderID
 	res.MemberID = r.MemberID
 
 	if res.LeaderID == res.MemberID {
 		// fill in members on response, we only do this for the leader to reduce overhead
 		for _, m := range group.Members {
-			res.Members = append(res.Members, protocol.Member{MemberID: m.ID, MemberMetadata: m.Metadata})
+			res.Members = append(res.Members, kmsg.JoinGroupResponseMember{MemberID: m.ID, ProtocolMetadata: m.Metadata})
 		}
 
 	}
@@ -651,27 +653,27 @@ func (b *Broker) handleJoinGroup(ctx *Context, r *protocol.JoinGroupRequest) *pr
 	return res
 }
 
-func (b *Broker) handleLeaveGroup(ctx *Context, r *protocol.LeaveGroupRequest) *protocol.LeaveGroupResponse {
+func (b *Broker) handleLeaveGroup(ctx *Context, r *kmsg.LeaveGroupRequest) *kmsg.LeaveGroupResponse {
 	sp := b.span(ctx, "leave group")
 	defer sp.End()
 
-	res := &protocol.LeaveGroupResponse{}
-	res.APIVersion = r.Version()
+	res := &kmsg.LeaveGroupResponse{}
+	res.SetVersion(r.GetVersion())
 
 	// // TODO: distribute this.
 	state := b.fsm.State()
 
-	_, group, err := state.GetGroup(r.GroupID)
+	_, group, err := state.GetGroup(r.Group)
 	if err != nil {
-		res.ErrorCode = protocol.ErrUnknown.Code()
+		res.ErrorCode = errorCodeFromErr(err)
 		return res
 	}
 	if group == nil {
-		res.ErrorCode = protocol.ErrInvalidGroupId.Code()
+		res.ErrorCode = kerr.InvalidGroupID.Code
 		return res
 	}
 	if _, ok := group.Members[r.MemberID]; !ok {
-		res.ErrorCode = protocol.ErrUnknownMemberId.Code()
+		res.ErrorCode = kerr.UnknownMemberID.Code
 		return res
 	}
 
@@ -681,55 +683,55 @@ func (b *Broker) handleLeaveGroup(ctx *Context, r *protocol.LeaveGroupRequest) *
 		Group: *group,
 	})
 	if err != nil {
-		res.ErrorCode = protocol.ErrUnknown.Code()
+		res.ErrorCode = errorCodeFromErr(err)
 		return res
 	}
 
 	return res
 }
 
-func (b *Broker) handleSyncGroup(ctx *Context, r *protocol.SyncGroupRequest) *protocol.SyncGroupResponse {
+func (b *Broker) handleSyncGroup(ctx *Context, r *kmsg.SyncGroupRequest) *kmsg.SyncGroupResponse {
 	sp := b.span(ctx, "sync group")
 	defer sp.End()
 
 	state := b.fsm.State()
-	res := &protocol.SyncGroupResponse{}
-	res.APIVersion = r.Version()
+	res := &kmsg.SyncGroupResponse{}
+	res.SetVersion(r.GetVersion())
 
-	_, group, err := state.GetGroup(r.GroupID)
+	_, group, err := state.GetGroup(r.Group)
 	if err != nil {
-		res.ErrorCode = protocol.ErrUnknown.Code()
+		res.ErrorCode = errorCodeFromErr(err)
 		return res
 	}
 	if group == nil {
-		res.ErrorCode = protocol.ErrInvalidGroupId.Code()
+		res.ErrorCode = kerr.InvalidGroupID.Code
 		return res
 	}
 	if _, ok := group.Members[r.MemberID]; !ok {
-		res.ErrorCode = protocol.ErrUnknownMemberId.Code()
+		res.ErrorCode = kerr.UnknownMemberID.Code
 		return res
 	}
-	if r.GenerationID != group.GenerationID {
-		res.ErrorCode = protocol.ErrIllegalGeneration.Code()
+	if r.Generation != group.GenerationID {
+		res.ErrorCode = kerr.IllegalGeneration.Code
 		return res
 	}
 	switch group.State {
 	case structs.GroupStateEmpty, structs.GroupStateDead:
-		res.ErrorCode = protocol.ErrUnknownMemberId.Code()
+		res.ErrorCode = kerr.UnknownMemberID.Code
 		return res
 	case structs.GroupStatePreparingRebalance:
-		res.ErrorCode = protocol.ErrRebalanceInProgress.Code()
+		res.ErrorCode = kerr.RebalanceInProgress.Code
 		return res
 	case structs.GroupStateCompletingRebalance:
 		// TODO: wait to get member in group
 
 		if group.LeaderID == r.MemberID {
 			// if is leader, attempt to persist state and transition to stable
-			var assignment []protocol.GroupAssignment
-			for _, ga := range r.GroupAssignments {
+			var assignment []kmsg.SyncGroupRequestGroupAssignment
+			for _, ga := range r.GroupAssignment {
 				if _, ok := group.Members[ga.MemberID]; !ok {
 					// if member isn't set fill in with empty assignment
-					assignment = append(assignment, protocol.GroupAssignment{
+					assignment = append(assignment, kmsg.SyncGroupRequestGroupAssignment{
 						MemberID:         ga.MemberID,
 						MemberAssignment: nil,
 					})
@@ -747,7 +749,7 @@ func (b *Broker) handleSyncGroup(ctx *Context, r *protocol.SyncGroupRequest) *pr
 
 	if group.LeaderID == r.MemberID {
 		// take the assignments from the leader and save them
-		for _, ga := range r.GroupAssignments {
+		for _, ga := range r.GroupAssignment {
 			if m, ok := group.Members[ga.MemberID]; ok {
 				m.Assignment = ga.MemberAssignment
 			} else {
@@ -758,7 +760,7 @@ func (b *Broker) handleSyncGroup(ctx *Context, r *protocol.SyncGroupRequest) *pr
 			Group: *group,
 		})
 		if err != nil {
-			res.ErrorCode = protocol.ErrUnknown.Code()
+			res.ErrorCode = errorCodeFromErr(err)
 			return res
 		}
 	} else {
@@ -773,60 +775,59 @@ func (b *Broker) handleSyncGroup(ctx *Context, r *protocol.SyncGroupRequest) *pr
 	return res
 }
 
-func (b *Broker) handleHeartbeat(ctx *Context, r *protocol.HeartbeatRequest) *protocol.HeartbeatResponse {
+func (b *Broker) handleHeartbeat(ctx *Context, r *kmsg.HeartbeatRequest) *kmsg.HeartbeatResponse {
 	sp := b.span(ctx, "heartbeat")
 	defer sp.End()
 
-	res := &protocol.HeartbeatResponse{}
-	res.APIVersion = r.Version()
+	res := &kmsg.HeartbeatResponse{}
+	res.SetVersion(r.GetVersion())
 
 	state := b.fsm.State()
-	_, group, err := state.GetGroup(r.GroupID)
+	_, group, err := state.GetGroup(r.Group)
 	if err != nil {
-		res.ErrorCode = protocol.ErrUnknown.Code()
+		res.ErrorCode = errorCodeFromErr(err)
 		return res
 	}
 	if group == nil {
-		res.ErrorCode = protocol.ErrInvalidGroupId.Code()
+		res.ErrorCode = kerr.InvalidGroupID.Code
 		return res
 	}
 	// TODO: need to handle case when rebalance is in process
 
-	res.ErrorCode = protocol.ErrNone.Code()
-
 	return res
 }
 
-func (b *Broker) handleFetch(ctx *Context, r *protocol.FetchRequest) *protocol.FetchResponse {
+func (b *Broker) handleFetch(ctx *Context, r *kmsg.FetchRequest) *kmsg.FetchResponse {
 	sp := b.span(ctx, "fetch")
 	defer sp.End()
-	fres := &protocol.FetchResponse{
-		Responses: make(protocol.FetchTopicResponses, len(r.Topics)),
+	fres := &kmsg.FetchResponse{
+		Topics: make([]kmsg.FetchResponseTopic, len(r.Topics)),
 	}
-	fres.APIVersion = r.Version()
+	fres.SetVersion(r.GetVersion())
 	for i, topic := range r.Topics {
-		fr := &protocol.FetchTopicResponse{
-			Topic:              topic.Topic,
-			PartitionResponses: make([]*protocol.FetchPartitionResponse, len(topic.Partitions)),
+		fr := kmsg.FetchResponseTopic{
+			Topic:      topic.Topic,
+			Partitions: make([]kmsg.FetchResponseTopicPartition, len(topic.Partitions)),
 		}
 		for j, p := range topic.Partitions {
-			fpres := &protocol.FetchPartitionResponse{}
-			fpres.Partition = p.Partition
-			err := b.withTimeout(r.MaxWaitTime, func() protocol.Error {
+			fpres := kmsg.FetchResponseTopicPartition{
+				Partition: p.Partition,
+			}
+			err := b.withTimeout(time.Millisecond*time.Duration(r.MaxWaitMillis), func() error {
 				replica, err := b.replicaLookup.Replica(topic.Topic, p.Partition)
 				if err != nil {
-					return protocol.ErrReplicaNotAvailable
+					return kerr.ReplicaNotAvailable
 				}
 				if replica.Partition.Leader != b.config.ID {
-					return protocol.ErrNotLeaderForPartition
+					return kerr.NotLeaderForPartition
 				}
 				if replica.Log == nil {
-					return protocol.ErrReplicaNotAvailable
+					return kerr.ReplicaNotAvailable
 				}
-				rdr, rdrErr := replica.Log.NewReader(p.FetchOffset, p.MaxBytes)
-				if rdrErr != nil {
-					log.Error.Printf("broker/%d: replica log read error: %s", b.config.ID, rdrErr)
-					return protocol.ErrUnknown.WithErr(rdrErr)
+				rdr, err := replica.Log.NewReader(p.FetchOffset, p.PartitionMaxBytes)
+				if err != nil {
+					log.Error.Printf("broker/%d: replica log read error: %s", b.config.ID, err)
+					return err
 				}
 				buf := new(bytes.Buffer)
 				var n int32
@@ -835,7 +836,7 @@ func (b *Broker) handleFetch(ctx *Context, r *protocol.FetchRequest) *protocol.F
 					nn, err := io.Copy(buf, rdr)
 					if err != nil && err != io.EOF {
 						log.Error.Printf("broker/%d: reader copy error: %v", b.config.ID, err)
-						return protocol.ErrUnknown.WithErr(rdrErr)
+						return err
 					}
 					n += int32(nn)
 					if err == io.EOF {
@@ -844,27 +845,27 @@ func (b *Broker) handleFetch(ctx *Context, r *protocol.FetchRequest) *protocol.F
 					}
 				}
 				fpres.HighWatermark = replica.Log.NewestOffset() - 1
-				fpres.RecordSet = buf.Bytes()
-				return protocol.ErrNone
+				fpres.RecordBatches = buf.Bytes()
+				return nil
 			})
-			fpres.ErrorCode = err.Code()
-			fr.PartitionResponses[j] = fpres
+			fpres.ErrorCode = errorCodeFromErr(err)
+			fr.Partitions[j] = fpres
 		}
-		fres.Responses[i] = fr
+		fres.Topics[i] = fr
 	}
 	return fres
 }
 
-func (b *Broker) handleSaslHandshake(ctx *Context, req *protocol.SaslHandshakeRequest) *protocol.SaslHandshakeResponse {
+func (b *Broker) handleSASLHandshake(ctx *Context, req *kmsg.SASLHandshakeRequest) *kmsg.SASLHandshakeResponse {
 	panic("not implemented: sasl handshake")
 	return nil
 }
 
-func (b *Broker) handleListGroups(ctx *Context, req *protocol.ListGroupsRequest) *protocol.ListGroupsResponse {
+func (b *Broker) handleListGroups(ctx *Context, req *kmsg.ListGroupsRequest) *kmsg.ListGroupsResponse {
 	sp := b.span(ctx, "create topic")
 	defer sp.End()
-	res := new(protocol.ListGroupsResponse)
-	res.APIVersion = req.Version()
+	res := new(kmsg.ListGroupsResponse)
+	res.SetVersion(req.GetVersion())
 	state := b.fsm.State()
 
 	fmt.Println("list")
@@ -873,12 +874,12 @@ func (b *Broker) handleListGroups(ctx *Context, req *protocol.ListGroupsRequest)
 
 	_, groups, err := state.GetGroups()
 	if err != nil {
-		res.ErrorCode = protocol.ErrUnknown.Code()
+		res.ErrorCode = errorCodeFromErr(err)
 		return res
 	}
 	for _, group := range groups {
-		res.Groups = append(res.Groups, protocol.ListGroup{
-			GroupID: group.Group,
+		res.Groups = append(res.Groups, kmsg.ListGroupsResponseGroup{
+			Group: group.Group,
 			// TODO: add protocol type
 			ProtocolType: "consumer",
 		})
@@ -886,38 +887,40 @@ func (b *Broker) handleListGroups(ctx *Context, req *protocol.ListGroupsRequest)
 	return res
 }
 
-func (b *Broker) handleDescribeGroups(ctx *Context, req *protocol.DescribeGroupsRequest) *protocol.DescribeGroupsResponse {
+func (b *Broker) handleDescribeGroups(ctx *Context, req *kmsg.DescribeGroupsRequest) *kmsg.DescribeGroupsResponse {
 	sp := b.span(ctx, "create topic")
 	defer sp.End()
-	res := new(protocol.DescribeGroupsResponse)
-	res.APIVersion = req.Version()
+	res := new(kmsg.DescribeGroupsResponse)
+	res.SetVersion(req.GetVersion())
 	state := b.fsm.State()
 
 	fmt.Println("describe")
 	fmt.Println("describe")
 	fmt.Println("describe")
 
-	for _, id := range req.GroupIDs {
-		group := protocol.Group{}
+	for _, id := range req.Groups {
+		group := kmsg.DescribeGroupsResponseGroup{
+			Group: id,
+		}
 		_, g, err := state.GetGroup(id)
 		if err != nil {
-			group.ErrorCode = protocol.ErrUnknown.Code()
-			group.GroupID = id
+			group.ErrorCode = errorCodeFromErr(err)
 			res.Groups = append(res.Groups, group)
 			return res
 		}
-		group.GroupID = id
 		group.State = "Stable"
 		group.ProtocolType = "consumer"
 		group.Protocol = "consumer"
-		for id, member := range g.Members {
-			group.GroupMembers[id] = &protocol.GroupMember{
+		group.Members = make([]kmsg.DescribeGroupsResponseGroupMember, 0, len(g.Members))
+		for _, member := range g.Members {
+			groupMember := kmsg.DescribeGroupsResponseGroupMember{
 				ClientID: member.ID,
 				// TODO: ???
-				ClientHost:            "",
-				GroupMemberMetadata:   member.Metadata,
-				GroupMemberAssignment: member.Assignment,
+				ClientHost:       "",
+				ProtocolMetadata: member.Metadata,
+				MemberAssignment: member.Assignment,
 			}
+			group.Members = append(group.Members, groupMember)
 		}
 		res.Groups = append(res.Groups)
 
@@ -926,33 +929,33 @@ func (b *Broker) handleDescribeGroups(ctx *Context, req *protocol.DescribeGroups
 	return res
 }
 
-func (b *Broker) handleStopReplica(ctx *Context, req *protocol.StopReplicaRequest) *protocol.StopReplicaResponse {
+func (b *Broker) handleStopReplica(ctx *Context, req *kmsg.StopReplicaRequest) *kmsg.StopReplicaResponse {
 	panic("not implemented: stop replica")
 	return nil
 }
 
-func (b *Broker) handleUpdateMetadata(ctx *Context, req *protocol.UpdateMetadataRequest) *protocol.UpdateMetadataResponse {
+func (b *Broker) handleUpdateMetadata(ctx *Context, req *kmsg.UpdateMetadataRequest) *kmsg.UpdateMetadataResponse {
 	panic("not implemented: update metadata")
 	return nil
 }
 
-func (b *Broker) handleControlledShutdown(ctx *Context, req *protocol.ControlledShutdownRequest) *protocol.ControlledShutdownResponse {
+func (b *Broker) handleControlledShutdown(ctx *Context, req *kmsg.ControlledShutdownRequest) *kmsg.ControlledShutdownResponse {
 	panic("not implemented: controlled shutdown")
 	return nil
 }
 
-func (b *Broker) handleOffsetCommit(ctx *Context, req *protocol.OffsetCommitRequest) *protocol.OffsetCommitResponse {
+func (b *Broker) handleOffsetCommit(ctx *Context, req *kmsg.OffsetCommitRequest) *kmsg.OffsetCommitResponse {
 	panic("not implemented: offset commit")
 	return nil
 }
 
-func (b *Broker) handleOffsetFetch(ctx *Context, req *protocol.OffsetFetchRequest) *protocol.OffsetFetchResponse {
+func (b *Broker) handleOffsetFetch(ctx *Context, req *kmsg.OffsetFetchRequest) *kmsg.OffsetFetchResponse {
 	sp := b.span(ctx, "create topic")
 	defer sp.End()
 
-	res := new(protocol.OffsetFetchResponse)
-	res.APIVersion = req.Version()
-	res.Responses = make([]protocol.OffsetFetchTopicResponse, len(req.Topics))
+	res := new(kmsg.OffsetFetchResponse)
+	res.SetVersion(req.GetVersion())
+	res.Topics = make([]kmsg.OffsetFetchResponseTopic, len(req.Topics))
 
 	// state := b.fsm.State()
 
@@ -986,7 +989,7 @@ func (b *Broker) createPartition(partition structs.Partition) error {
 }
 
 // startReplica is used to start a replica on this, including creating its commit log.
-func (b *Broker) startReplica(replica *Replica) protocol.Error {
+func (b *Broker) startReplica(replica *Replica) error {
 	b.Lock()
 	defer b.Unlock()
 
@@ -997,7 +1000,7 @@ func (b *Broker) startReplica(replica *Replica) protocol.Error {
 
 	if topic == nil {
 		log.Info.Printf("broker/%d: start replica called on unknown topic: %s", b.config.ID, replica.Partition.Topic)
-		return protocol.ErrUnknownTopicOrPartition
+		return kerr.UnknownTopicOrPartition
 	}
 
 	if replica.Log == nil {
@@ -1008,24 +1011,24 @@ func (b *Broker) startReplica(replica *Replica) protocol.Error {
 			CleanupPolicy:   commitlog.CleanupPolicy(topic.Config.GetValue("cleanup.policy").(string)),
 		})
 		if err != nil {
-			return protocol.ErrUnknown.WithErr(err)
+			return err
 		}
 		replica.Log = log
 		// TODO: register leader-change listener on r.replica.Partition.id
 	}
 
-	return protocol.ErrNone
+	return nil
 }
 
 // createTopic is used to create the topic across the cluster.
-func (b *Broker) createTopic(ctx *Context, topic *protocol.CreateTopicRequest) protocol.Error {
+func (b *Broker) createTopic(ctx *Context, topic kmsg.CreateTopicsRequestTopic) error {
 	state := b.fsm.State()
 	_, t, _ := state.GetTopic(topic.Topic)
 	if t != nil {
-		return protocol.ErrTopicAlreadyExists
+		return kerr.TopicAlreadyExists
 	}
 	ps, err := b.buildPartitions(topic.Topic, topic.NumPartitions, topic.ReplicationFactor)
-	if err != protocol.ErrNone {
+	if err != nil {
 		return err
 	}
 	tt := structs.Topic{
@@ -1037,21 +1040,21 @@ func (b *Broker) createTopic(ctx *Context, topic *protocol.CreateTopicRequest) p
 	}
 	// TODO: create/set topic config here
 	if _, err := b.raftApply(structs.RegisterTopicRequestType, structs.RegisterTopicRequest{Topic: tt}); err != nil {
-		return protocol.ErrUnknown.WithErr(err)
+		return err
 	}
 	for _, partition := range ps {
 		if err := b.createPartition(partition); err != nil {
-			return protocol.ErrUnknown.WithErr(err)
+			return err
 		}
 	}
 	// could move this up maybe and do the iteration once
-	req := &protocol.LeaderAndISRRequest{
+	req := &kmsg.LeaderAndISRRequest{
 		ControllerID: b.config.ID,
 		// TODO ControllerEpoch
-		PartitionStates: make([]*protocol.PartitionState, 0, len(ps)),
+		PartitionStates: make([]kmsg.LeaderAndISRRequestTopicPartition, 0, len(ps)),
 	}
 	for _, partition := range ps {
-		req.PartitionStates = append(req.PartitionStates, &protocol.PartitionState{
+		req.PartitionStates = append(req.PartitionStates, kmsg.LeaderAndISRRequestTopicPartition{
 			Topic:     partition.Topic,
 			Partition: partition.ID,
 			// TODO: ControllerEpoch, LeaderEpoch, ZKVersion
@@ -1064,31 +1067,31 @@ func (b *Broker) createTopic(ctx *Context, topic *protocol.CreateTopicRequest) p
 	for _, broker := range b.brokerLookup.Brokers() {
 		if broker.ID.Int32() == b.config.ID {
 			errCode := b.handleLeaderAndISR(ctx, req).ErrorCode
-			if protocol.ErrNone.Code() != errCode {
+			if errCode != 0 {
 				panic(fmt.Sprintf("broker/%d: handling leader and isr error: %d", b.config.ID, errCode))
 			}
 		} else {
 			conn, err := Dial("tcp", broker.BrokerAddr)
 			if err != nil {
-				return protocol.ErrUnknown.WithErr(err)
+				return err
 			}
 			res, err := conn.LeaderAndISR(req)
 			if err != nil {
 				// handle err and responses
-				return protocol.ErrUnknown.WithErr(err)
+				return err
 			}
 			spew.Dump("leader and isr res", res)
 		}
 	}
-	return protocol.ErrNone
+	return nil
 }
 
-func (b *Broker) buildPartitions(topic string, partitionsCount int32, replicationFactor int16) ([]structs.Partition, protocol.Error) {
+func (b *Broker) buildPartitions(topic string, partitionsCount int32, replicationFactor int16) ([]structs.Partition, error) {
 	brokers := b.brokerLookup.Brokers()
 	count := len(brokers)
 
 	if int(replicationFactor) > count {
-		return nil, protocol.ErrInvalidReplicationFactor
+		return nil, kerr.InvalidReplicationFactor
 	}
 
 	// container/ring is dope af
@@ -1120,7 +1123,7 @@ func (b *Broker) buildPartitions(topic string, partitionsCount int32, replicatio
 		partitions = append(partitions, partition)
 	}
 
-	return partitions, protocol.ErrNone
+	return partitions, nil
 }
 
 // Leave is used to prepare for a graceful shutdown.
@@ -1209,41 +1212,41 @@ func (b *Broker) Shutdown() error {
 
 // Replication.
 
-func (b *Broker) becomeFollower(replica *Replica, cmd *protocol.PartitionState) protocol.Error {
+func (b *Broker) becomeFollower(replica *Replica, cmd kmsg.LeaderAndISRRequestTopicPartition) error {
 	// stop replicator to current leader
 	b.Lock()
 	defer b.Unlock()
 	if replica.Replicator != nil {
 		if err := replica.Replicator.Close(); err != nil {
-			return protocol.ErrUnknown.WithErr(err)
+			return err
 		}
 	}
 	hw := replica.Log.NewestOffset()
 	if err := replica.Log.Truncate(hw); err != nil {
-		return protocol.ErrUnknown.WithErr(err)
+		return err
 	}
 	broker := b.brokerLookup.BrokerByID(raft.ServerID(fmt.Sprintf("%d", cmd.Leader)))
 	if broker == nil {
-		return protocol.ErrBrokerNotAvailable
+		return kerr.BrokerNotAvailable
 	}
 	conn, err := NewDialer(fmt.Sprintf("jocko-replicator-%d", b.config.ID)).Dial("tcp", broker.BrokerAddr)
 	if err != nil {
-		return protocol.ErrUnknown.WithErr(err)
+		return err
 	}
 	r := NewReplicator(ReplicatorConfig{}, replica, conn)
 	replica.Replicator = r
 	if !b.config.DevMode {
 		r.Replicate()
 	}
-	return protocol.ErrNone
+	return nil
 }
 
-func (b *Broker) becomeLeader(replica *Replica, cmd *protocol.PartitionState) protocol.Error {
+func (b *Broker) becomeLeader(replica *Replica, cmd kmsg.LeaderAndISRRequestTopicPartition) error {
 	b.Lock()
 	defer b.Unlock()
 	if replica.Replicator != nil {
 		if err := replica.Replicator.Close(); err != nil {
-			return protocol.ErrUnknown.WithErr(err)
+			return err
 		}
 		replica.Replicator = nil
 	}
@@ -1251,7 +1254,7 @@ func (b *Broker) becomeLeader(replica *Replica, cmd *protocol.PartitionState) pr
 	replica.Partition.AR = cmd.Replicas
 	replica.Partition.ISR = cmd.ISR
 	replica.Partition.LeaderEpoch = cmd.ZKVersion
-	return protocol.ErrNone
+	return nil
 }
 
 func contains(rs []int32, r int32) bool {
@@ -1335,7 +1338,7 @@ func (b *Broker) offsetsTopic(ctx *Context) (topic *structs.Topic, err error) {
 
 	// doesn't exist so let's create it
 	partitions, err := b.buildPartitions(OffsetsTopicName, 50, b.config.OffsetsTopicReplicationFactor)
-	if err != protocol.ErrNone {
+	if err != nil {
 		return nil, err
 	}
 	topic = &structs.Topic{
@@ -1362,12 +1365,12 @@ func (b *Broker) debugSnapshot() {
 
 }
 
-func (b *Broker) withTimeout(timeout time.Duration, fn func() protocol.Error) protocol.Error {
+func (b *Broker) withTimeout(timeout time.Duration, fn func() error) error {
 	if timeout <= 0 {
 		return fn()
 	}
 
-	c := make(chan protocol.Error, 1)
+	c := make(chan error, 1)
 
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
@@ -1380,7 +1383,7 @@ func (b *Broker) withTimeout(timeout time.Duration, fn func() protocol.Error) pr
 	case err := <-c:
 		return err
 	case <-timer.C:
-		return protocol.ErrRequestTimedOut
+		return kerr.RequestTimedOut
 	}
 }
 
@@ -1417,4 +1420,15 @@ func (b *Broker) logState() {
 			log.Info.Printf("broker/%d: state:\n%s", b.config.ID, buf.String())
 		}
 	}
+}
+
+func errorCodeFromErr(err error) int16 {
+	if err == nil {
+		return 0
+	}
+	var cause *kerr.Error
+	if errors.As(err, &cause) {
+		return cause.Code
+	}
+	return kerr.UnknownServerError.Code
 }

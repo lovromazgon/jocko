@@ -12,6 +12,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp/cmpopts"
+
+	"github.com/twmb/franz-go/pkg/kerr"
+
+	"github.com/twmb/franz-go/pkg/kmsg"
+
 	"github.com/google/go-cmp/cmp"
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/serf/serf"
@@ -57,11 +63,11 @@ func TestBroker_Run(t *testing.T) {
 				responseCh: make(chan *Context, 2),
 				requests: []*Context{{
 					header: &protocol.RequestHeader{CorrelationID: 1},
-					req:    &protocol.APIVersionsRequest{},
+					req:    &kmsg.ApiVersionsRequest{},
 				}},
 				responses: []*Context{{
 					header: &protocol.RequestHeader{CorrelationID: 1},
-					res:    &protocol.Response{CorrelationID: 1, Body: apiVersions},
+					res:    &protocol.Response{CorrelationID: 1, Body: &kmsg.ApiVersionsResponse{ApiKeys: protocol.APIVersions}},
 				}},
 			},
 		},
@@ -72,7 +78,7 @@ func TestBroker_Run(t *testing.T) {
 				responseCh: make(chan *Context, 2),
 				requests: []*Context{{
 					header: &protocol.RequestHeader{CorrelationID: 1},
-					req: &protocol.CreateTopicRequests{Requests: []*protocol.CreateTopicRequest{{
+					req: &kmsg.CreateTopicsRequest{Topics: []kmsg.CreateTopicsRequestTopic{{
 						Topic:             "test-topic",
 						NumPartitions:     1,
 						ReplicationFactor: 1,
@@ -80,8 +86,8 @@ func TestBroker_Run(t *testing.T) {
 				},
 				responses: []*Context{{
 					header: &protocol.RequestHeader{CorrelationID: 1},
-					res: &protocol.Response{CorrelationID: 1, Body: &protocol.CreateTopicsResponse{
-						TopicErrorCodes: []*protocol.TopicErrorCode{{Topic: "test-topic", ErrorCode: protocol.ErrNone.Code()}},
+					res: &protocol.Response{CorrelationID: 1, Body: &kmsg.CreateTopicsResponse{
+						Topics: []kmsg.CreateTopicsResponseTopic{{Topic: "test-topic"}},
 					}},
 				}},
 			},
@@ -93,16 +99,18 @@ func TestBroker_Run(t *testing.T) {
 				responseCh: make(chan *Context, 2),
 				requests: []*Context{{
 					header: &protocol.RequestHeader{CorrelationID: 1},
-					req: &protocol.CreateTopicRequests{Requests: []*protocol.CreateTopicRequest{{
-						Topic:             "test-topic",
-						NumPartitions:     1,
-						ReplicationFactor: 2,
-					}}}},
-				},
+					req: &kmsg.CreateTopicsRequest{
+						Topics: []kmsg.CreateTopicsRequestTopic{{
+							Topic:             "test-topic",
+							NumPartitions:     1,
+							ReplicationFactor: 2,
+						}},
+					},
+				}},
 				responses: []*Context{{
 					header: &protocol.RequestHeader{CorrelationID: 1},
-					res: &protocol.Response{CorrelationID: 1, Body: &protocol.CreateTopicsResponse{
-						TopicErrorCodes: []*protocol.TopicErrorCode{{Topic: "test-topic", ErrorCode: protocol.ErrInvalidReplicationFactor.Code()}},
+					res: &protocol.Response{CorrelationID: 1, Body: &kmsg.CreateTopicsResponse{
+						Topics: []kmsg.CreateTopicsResponseTopic{{Topic: "test-topic", ErrorCode: kerr.InvalidReplicationFactor.Code}},
 					}},
 				}},
 			},
@@ -114,24 +122,32 @@ func TestBroker_Run(t *testing.T) {
 				responseCh: make(chan *Context, 2),
 				requests: []*Context{{
 					header: &protocol.RequestHeader{CorrelationID: 1},
-					req: &protocol.CreateTopicRequests{Requests: []*protocol.CreateTopicRequest{{
-						Topic:             "test-topic",
-						NumPartitions:     1,
-						ReplicationFactor: 1,
-					}}}}, {
+					req: &kmsg.CreateTopicsRequest{
+						Topics: []kmsg.CreateTopicsRequestTopic{{
+							Topic:             "test-topic",
+							NumPartitions:     1,
+							ReplicationFactor: 1,
+						}},
+					},
+				}, {
 					header: &protocol.RequestHeader{CorrelationID: 2},
-					req:    &protocol.DeleteTopicsRequest{Topics: []string{"test-topic"}}},
-				},
+					req: &kmsg.DeleteTopicsRequest{
+						Topics: []kmsg.DeleteTopicsRequestTopic{{
+							Topic: kmsg.StringPtr("test-topic"),
+						}},
+					},
+				}},
 				responses: []*Context{{
 					header: &protocol.RequestHeader{CorrelationID: 1},
-					res: &protocol.Response{CorrelationID: 1, Body: &protocol.CreateTopicsResponse{
-						TopicErrorCodes: []*protocol.TopicErrorCode{{Topic: "test-topic", ErrorCode: protocol.ErrNone.Code()}},
+					res: &protocol.Response{CorrelationID: 1, Body: &kmsg.CreateTopicsResponse{
+						Topics: []kmsg.CreateTopicsResponseTopic{{Topic: "test-topic"}},
 					}},
 				}, {
 					header: &protocol.RequestHeader{CorrelationID: 2},
-					res: &protocol.Response{CorrelationID: 2, Body: &protocol.DeleteTopicsResponse{
-						TopicErrorCodes: []*protocol.TopicErrorCode{{Topic: "test-topic", ErrorCode: protocol.ErrNone.Code()}},
-					}}}},
+					res: &protocol.Response{CorrelationID: 2, Body: &kmsg.DeleteTopicsResponse{
+						Topics: []kmsg.DeleteTopicsResponseTopic{{Topic: kmsg.StringPtr("test-topic")}},
+					}},
+				}},
 			},
 		},
 		{
@@ -139,76 +155,83 @@ func TestBroker_Run(t *testing.T) {
 			args: args{
 				requestCh:  make(chan *Context, 2),
 				responseCh: make(chan *Context, 2),
-				requests: []*Context{
-					{
-						header: &protocol.RequestHeader{CorrelationID: 1},
-						req: &protocol.CreateTopicRequests{
-							Timeout: time.Second,
-							Requests: []*protocol.CreateTopicRequest{{
-								Topic:             "test-topic",
-								NumPartitions:     1,
-								ReplicationFactor: 1,
-							}}},
-					},
-					{
-						header: &protocol.RequestHeader{CorrelationID: 2},
-						req: &protocol.ProduceRequest{
-							Timeout: time.Second,
-							TopicData: []*protocol.TopicData{{
-								Topic: "test-topic",
-								Data: []*protocol.Data{{
-									RecordSet: mustEncode(&protocol.MessageSet{Offset: 0, Messages: []*protocol.Message{{Value: []byte("The message.")}}})}}}}},
-					},
-					{
-						header: &protocol.RequestHeader{CorrelationID: 3},
-						req:    &protocol.OffsetsRequest{ReplicaID: 0, Topics: []*protocol.OffsetsTopic{{Topic: "test-topic", Partitions: []*protocol.OffsetsPartition{{Partition: 0, Timestamp: -1}}}}},
-					},
-					{
-						header: &protocol.RequestHeader{CorrelationID: 4},
-						req:    &protocol.OffsetsRequest{ReplicaID: 0, Topics: []*protocol.OffsetsTopic{{Topic: "test-topic", Partitions: []*protocol.OffsetsPartition{{Partition: 0, Timestamp: -2}}}}},
-					},
-				},
-				responses: []*Context{
-					{
-						header: &protocol.RequestHeader{CorrelationID: 1},
-						res: &protocol.Response{CorrelationID: 1, Body: &protocol.CreateTopicsResponse{
-							TopicErrorCodes: []*protocol.TopicErrorCode{{Topic: "test-topic", ErrorCode: protocol.ErrNone.Code()}},
+				requests: []*Context{{
+					header: &protocol.RequestHeader{CorrelationID: 1},
+					req: &kmsg.CreateTopicsRequest{
+						TimeoutMillis: int32(time.Second.Milliseconds()),
+						Topics: []kmsg.CreateTopicsRequestTopic{{
+							Topic:             "test-topic",
+							NumPartitions:     1,
+							ReplicationFactor: 1,
 						}},
 					},
-					{
-						header: &protocol.RequestHeader{CorrelationID: 2},
-						res: &protocol.Response{CorrelationID: 2, Body: &protocol.ProduceResponse{
-							Responses: []*protocol.ProduceTopicResponse{{
-								Topic:              "test-topic",
-								PartitionResponses: []*protocol.ProducePartitionResponse{{Partition: 0, BaseOffset: 0, ErrorCode: protocol.ErrNone.Code()}},
+				}, {
+					header: &protocol.RequestHeader{CorrelationID: 2},
+					req: &kmsg.ProduceRequest{
+						TimeoutMillis: int32(time.Second.Milliseconds()),
+						Topics: []kmsg.ProduceRequestTopic{{
+							Topic: "test-topic",
+							Partitions: []kmsg.ProduceRequestTopicPartition{{
+								Records: mustEncode(
+									&protocol.MessageSet{Offset: 0, Messages: []*protocol.Message{{Value: []byte("The message.")}}}),
 							}},
 						}},
 					},
-					{
-						header: &protocol.RequestHeader{CorrelationID: 3},
-						res: &protocol.Response{CorrelationID: 3, Body: &protocol.OffsetsResponse{
-							Responses: []*protocol.OffsetResponse{{
-								Topic:              "test-topic",
-								PartitionResponses: []*protocol.PartitionResponse{{Partition: 0, Offsets: []int64{1}, ErrorCode: protocol.ErrNone.Code()}},
-							}},
+				}, {
+					header: &protocol.RequestHeader{CorrelationID: 3},
+					req: &kmsg.ListOffsetsRequest{
+						ReplicaID: 0,
+						Topics: []kmsg.ListOffsetsRequestTopic{{
+							Topic:      "test-topic",
+							Partitions: []kmsg.ListOffsetsRequestTopicPartition{{Partition: 0, Timestamp: -1}},
 						}},
 					},
-					{
-						header: &protocol.RequestHeader{CorrelationID: 4},
-						res: &protocol.Response{CorrelationID: 4, Body: &protocol.OffsetsResponse{
-							Responses: []*protocol.OffsetResponse{{
-								Topic:              "test-topic",
-								PartitionResponses: []*protocol.PartitionResponse{{Partition: 0, Offsets: []int64{0}, ErrorCode: protocol.ErrNone.Code()}},
-							}},
+				}, {
+					header: &protocol.RequestHeader{CorrelationID: 4},
+					req: &kmsg.ListOffsetsRequest{
+						ReplicaID: 0,
+						Topics: []kmsg.ListOffsetsRequestTopic{{
+							Topic:      "test-topic",
+							Partitions: []kmsg.ListOffsetsRequestTopicPartition{{Partition: 0, Timestamp: -2}},
 						}},
 					},
-				},
+				}},
+				responses: []*Context{{
+					header: &protocol.RequestHeader{CorrelationID: 1},
+					res: &protocol.Response{CorrelationID: 1, Body: &kmsg.CreateTopicsResponse{
+						Topics: []kmsg.CreateTopicsResponseTopic{{Topic: "test-topic"}},
+					}},
+				}, {
+					header: &protocol.RequestHeader{CorrelationID: 2},
+					res: &protocol.Response{CorrelationID: 2, Body: &kmsg.ProduceResponse{
+						Topics: []kmsg.ProduceResponseTopic{{
+							Topic:      "test-topic",
+							Partitions: []kmsg.ProduceResponseTopicPartition{{Partition: 0, BaseOffset: 0}},
+						}},
+					}},
+				}, {
+					header: &protocol.RequestHeader{CorrelationID: 3},
+					res: &protocol.Response{CorrelationID: 3, Body: &kmsg.ListOffsetsResponse{
+						Topics: []kmsg.ListOffsetsResponseTopic{{
+							Topic:      "test-topic",
+							Partitions: []kmsg.ListOffsetsResponseTopicPartition{{Partition: 0, Offset: 1}},
+						}},
+					}},
+				}, {
+					header: &protocol.RequestHeader{CorrelationID: 4},
+					res: &protocol.Response{CorrelationID: 4, Body: &kmsg.ListOffsetsResponse{
+						Topics: []kmsg.ListOffsetsResponseTopic{{
+							Topic:      "test-topic",
+							Partitions: []kmsg.ListOffsetsResponseTopicPartition{{Partition: 0, Offset: 0}},
+						}},
+					}},
+				}},
 			},
 			handle: func(t *testing.T, _ *Broker, ctx *Context) {
-				switch res := ctx.res.(*protocol.Response).Body.(type) {
+				switch res := ctx.res.Body.(type) {
 				// handle timestamp explicitly since we don't know what
 				// it'll be set to
-				case *protocol.ProduceResponse:
+				case *kmsg.ProduceResponse:
 					handleProduceResponse(t, res)
 				}
 			},
@@ -218,83 +241,75 @@ func TestBroker_Run(t *testing.T) {
 			args: args{
 				requestCh:  make(chan *Context, 2),
 				responseCh: make(chan *Context, 2),
-				requests: []*Context{
-					{
-						header: &protocol.RequestHeader{CorrelationID: 1},
-						req: &protocol.CreateTopicRequests{
-							Timeout: time.Second,
-							Requests: []*protocol.CreateTopicRequest{{
-								Topic:             "test-topic",
-								NumPartitions:     1,
-								ReplicationFactor: 1,
-							}}},
-					},
-					{
-						header: &protocol.RequestHeader{CorrelationID: 2},
-						req: &protocol.ProduceRequest{
-							Timeout: time.Second,
-							TopicData: []*protocol.TopicData{{
-								Topic: "test-topic",
-								Data: []*protocol.Data{{
-									RecordSet: mustEncode(&protocol.MessageSet{Offset: 0, Messages: []*protocol.Message{{Value: []byte("The message.")}}})}}},
-							}},
-					},
-					{
-						header: &protocol.RequestHeader{CorrelationID: 3},
-						req: &protocol.FetchRequest{
-							MaxWaitTime: time.Second,
-							ReplicaID:   1,
-							MinBytes:    5,
-							Topics: []*protocol.FetchTopic{
-								{
-									Topic: "test-topic",
-									Partitions: []*protocol.FetchPartition{{Partition: 0,
-										FetchOffset: 0,
-										MaxBytes:    100,
-									}},
-								},
-							}},
-					},
-				},
-				responses: []*Context{
-					{
-						header: &protocol.RequestHeader{CorrelationID: 1},
-						res: &protocol.Response{CorrelationID: 1, Body: &protocol.CreateTopicsResponse{
-							TopicErrorCodes: []*protocol.TopicErrorCode{{Topic: "test-topic", ErrorCode: protocol.ErrNone.Code()}},
+				requests: []*Context{{
+					header: &protocol.RequestHeader{CorrelationID: 1},
+					req: &kmsg.CreateTopicsRequest{
+						TimeoutMillis: int32(time.Second.Milliseconds()),
+						Topics: []kmsg.CreateTopicsRequestTopic{{
+							Topic:             "test-topic",
+							NumPartitions:     1,
+							ReplicationFactor: 1,
 						}},
 					},
-					{
-						header: &protocol.RequestHeader{CorrelationID: 2},
-						res: &protocol.Response{CorrelationID: 2, Body: &protocol.ProduceResponse{
-							Responses: []*protocol.ProduceTopicResponse{
-								{
-									Topic:              "test-topic",
-									PartitionResponses: []*protocol.ProducePartitionResponse{{Partition: 0, BaseOffset: 0, ErrorCode: protocol.ErrNone.Code()}},
-								},
-							},
+				}, {
+					header: &protocol.RequestHeader{CorrelationID: 2},
+					req: &kmsg.ProduceRequest{
+						TimeoutMillis: int32(time.Second.Milliseconds()),
+						Topics: []kmsg.ProduceRequestTopic{{
+							Topic: "test-topic",
+							Partitions: []kmsg.ProduceRequestTopicPartition{{
+								Records: mustEncode(&protocol.MessageSet{Offset: 0, Messages: []*protocol.Message{{Value: []byte("The message.")}}}),
+							}},
 						}},
 					},
-					{
-						header: &protocol.RequestHeader{CorrelationID: 3},
-						res: &protocol.Response{CorrelationID: 3, Body: &protocol.FetchResponse{
-							Responses: protocol.FetchTopicResponses{{
-								Topic: "test-topic",
-								PartitionResponses: []*protocol.FetchPartitionResponse{{
-									Partition:     0,
-									ErrorCode:     protocol.ErrNone.Code(),
-									HighWatermark: 0,
-									RecordSet:     mustEncode(&protocol.MessageSet{Offset: 0, Messages: []*protocol.Message{{Value: []byte("The message.")}}}),
-								}},
-							}}},
-						},
+				}, {
+					header: &protocol.RequestHeader{CorrelationID: 3},
+					req: &kmsg.FetchRequest{
+						MaxWaitMillis: int32(time.Second.Milliseconds()),
+						ReplicaID:     1,
+						MinBytes:      5,
+						Topics: []kmsg.FetchRequestTopic{{
+							Topic: "test-topic",
+							Partitions: []kmsg.FetchRequestTopicPartition{{
+								Partition:         0,
+								FetchOffset:       0,
+								PartitionMaxBytes: 100,
+							}},
+						}},
 					},
-				},
+				}},
+				responses: []*Context{{
+					header: &protocol.RequestHeader{CorrelationID: 1},
+					res: &protocol.Response{CorrelationID: 1, Body: &kmsg.CreateTopicsResponse{
+						Topics: []kmsg.CreateTopicsResponseTopic{{Topic: "test-topic"}},
+					}},
+				}, {
+					header: &protocol.RequestHeader{CorrelationID: 2},
+					res: &protocol.Response{CorrelationID: 2, Body: &kmsg.ProduceResponse{
+						Topics: []kmsg.ProduceResponseTopic{{
+							Topic:      "test-topic",
+							Partitions: []kmsg.ProduceResponseTopicPartition{{Partition: 0, BaseOffset: 0}},
+						}},
+					}},
+				}, {
+					header: &protocol.RequestHeader{CorrelationID: 3},
+					res: &protocol.Response{CorrelationID: 3, Body: &kmsg.FetchResponse{
+						Topics: []kmsg.FetchResponseTopic{{
+							Topic: "test-topic",
+							Partitions: []kmsg.FetchResponseTopicPartition{{
+								Partition:     0,
+								HighWatermark: 0,
+								RecordBatches: mustEncode(&protocol.MessageSet{Offset: 0, Messages: []*protocol.Message{{Value: []byte("The message.")}}}),
+							}},
+						}},
+					}},
+				}},
 			},
 			handle: func(t *testing.T, _ *Broker, ctx *Context) {
-				switch res := ctx.res.(*protocol.Response).Body.(type) {
+				switch res := ctx.res.Body.(type) {
 				// handle timestamp explicitly since we don't know what
 				// it'll be set to
-				case *protocol.ProduceResponse:
+				case *kmsg.ProduceResponse:
 					handleProduceResponse(t, res)
 				}
 			},
@@ -304,66 +319,61 @@ func TestBroker_Run(t *testing.T) {
 			args: args{
 				requestCh:  make(chan *Context, 2),
 				responseCh: make(chan *Context, 2),
-				requests: []*Context{
-					{
-						header: &protocol.RequestHeader{CorrelationID: 1},
-						req: &protocol.CreateTopicRequests{
-							Timeout: time.Second,
-							Requests: []*protocol.CreateTopicRequest{{
-								Topic:             "test-topic",
-								NumPartitions:     1,
-								ReplicationFactor: 1,
-							}}},
-					},
-					{
-						header: &protocol.RequestHeader{CorrelationID: 2},
-						req: &protocol.ProduceRequest{
-							Timeout: time.Second,
-							TopicData: []*protocol.TopicData{{
-								Topic: "test-topic",
-								Data: []*protocol.Data{{
-									RecordSet: mustEncode(&protocol.MessageSet{Offset: 0, Messages: []*protocol.Message{{Value: []byte("The message.")}}})}}}}},
-					},
-					{
-						header: &protocol.RequestHeader{CorrelationID: 3},
-						req:    &protocol.MetadataRequest{Topics: []string{"test-topic", "unknown-topic"}},
-					},
-				},
-				responses: []*Context{
-					{
-						header: &protocol.RequestHeader{CorrelationID: 1},
-						res: &protocol.Response{CorrelationID: 1, Body: &protocol.CreateTopicsResponse{
-							TopicErrorCodes: []*protocol.TopicErrorCode{{Topic: "test-topic", ErrorCode: protocol.ErrNone.Code()}},
-						}},
-					},
-					{
-						header: &protocol.RequestHeader{CorrelationID: 2},
-						res: &protocol.Response{CorrelationID: 2, Body: &protocol.ProduceResponse{
-							Responses: []*protocol.ProduceTopicResponse{
-								{
-									Topic:              "test-topic",
-									PartitionResponses: []*protocol.ProducePartitionResponse{{Partition: 0, BaseOffset: 0, ErrorCode: protocol.ErrNone.Code()}},
-								},
+				requests: []*Context{{
+					header: &protocol.RequestHeader{CorrelationID: 1},
+					req: &kmsg.CreateTopicsRequest{
+						TimeoutMillis: int32(time.Second.Milliseconds()),
+						Topics: []kmsg.CreateTopicsRequestTopic{{
+							Topic:             "test-topic",
+							NumPartitions:     1,
+							ReplicationFactor: 1,
+						}}},
+				}, {
+					header: &protocol.RequestHeader{CorrelationID: 2},
+					req: &kmsg.ProduceRequest{
+						TimeoutMillis: int32(time.Second.Milliseconds()),
+						Topics: []kmsg.ProduceRequestTopic{{
+							Topic: "test-topic",
+							Partitions: []kmsg.ProduceRequestTopicPartition{{
+								Records: mustEncode(&protocol.MessageSet{Offset: 0, Messages: []*protocol.Message{{Value: []byte("The message.")}}})}}}}},
+				}, {
+					header: &protocol.RequestHeader{CorrelationID: 3},
+					req: &kmsg.MetadataRequest{Topics: []kmsg.MetadataRequestTopic{
+						{Topic: kmsg.StringPtr("test-topic")},
+						{Topic: kmsg.StringPtr("unknown-topic")},
+					}},
+				}},
+				responses: []*Context{{
+					header: &protocol.RequestHeader{CorrelationID: 1},
+					res: &protocol.Response{CorrelationID: 1, Body: &kmsg.CreateTopicsResponse{
+						Topics: []kmsg.CreateTopicsResponseTopic{{Topic: "test-topic"}},
+					}},
+				}, {
+					header: &protocol.RequestHeader{CorrelationID: 2},
+					res: &protocol.Response{CorrelationID: 2, Body: &kmsg.ProduceResponse{
+						Topics: []kmsg.ProduceResponseTopic{
+							{
+								Topic:      "test-topic",
+								Partitions: []kmsg.ProduceResponseTopicPartition{{Partition: 0, BaseOffset: 0}},
 							},
-						}},
-					},
-					{
-						header: &protocol.RequestHeader{CorrelationID: 3},
-						res: &protocol.Response{CorrelationID: 3, Body: &protocol.MetadataResponse{
-							Brokers: []*protocol.Broker{{NodeID: 1, Host: "localhost", Port: 9092}},
-							TopicMetadata: []*protocol.TopicMetadata{
-								{Topic: "test-topic", TopicErrorCode: protocol.ErrNone.Code(), PartitionMetadata: []*protocol.PartitionMetadata{{PartitionErrorCode: protocol.ErrNone.Code(), PartitionID: 0, Leader: 1, Replicas: []int32{1}, ISR: []int32{1}}}},
-								{Topic: "unknown-topic", TopicErrorCode: protocol.ErrUnknownTopicOrPartition.Code()},
-							},
-						}},
-					},
-				},
+						},
+					}},
+				}, {
+					header: &protocol.RequestHeader{CorrelationID: 3},
+					res: &protocol.Response{CorrelationID: 3, Body: &kmsg.MetadataResponse{
+						Brokers: []kmsg.MetadataResponseBroker{{NodeID: 1, Host: "localhost", Port: 9092}},
+						Topics: []kmsg.MetadataResponseTopic{
+							{Topic: kmsg.StringPtr("test-topic"), Partitions: []kmsg.MetadataResponseTopicPartition{{Partition: 0, Leader: 1, Replicas: []int32{1}, ISR: []int32{1}}}},
+							{Topic: kmsg.StringPtr("unknown-topic"), ErrorCode: kerr.UnknownTopicOrPartition.Code},
+						},
+					}},
+				}},
 			},
 			handle: func(t *testing.T, _ *Broker, ctx *Context) {
-				switch res := ctx.res.(*protocol.Response).Body.(type) {
+				switch res := ctx.res.Body.(type) {
 				// handle timestamp explicitly since we don't know what
 				// it'll be set to
-				case *protocol.ProduceResponse:
+				case *kmsg.ProduceResponse:
 					handleProduceResponse(t, res)
 				}
 			},
@@ -375,27 +385,27 @@ func TestBroker_Run(t *testing.T) {
 				responseCh: make(chan *Context, 2),
 				requests: []*Context{{
 					header: &protocol.RequestHeader{CorrelationID: 2},
-					req: &protocol.ProduceRequest{
-						Timeout: time.Second,
-						TopicData: []*protocol.TopicData{{
+					req: &kmsg.ProduceRequest{
+						TimeoutMillis: int32(time.Second.Milliseconds()),
+						Topics: []kmsg.ProduceRequestTopic{{
 							Topic: "another-topic",
-							Data: []*protocol.Data{{
-								RecordSet: mustEncode(&protocol.MessageSet{Offset: 1, Messages: []*protocol.Message{{Value: []byte("The message.")}}})}}}}}},
+							Partitions: []kmsg.ProduceRequestTopicPartition{{
+								Records: mustEncode(&protocol.MessageSet{Offset: 1, Messages: []*protocol.Message{{Value: []byte("The message.")}}})}}}}}},
 				},
 				responses: []*Context{{
 					header: &protocol.RequestHeader{CorrelationID: 2},
-					res: &protocol.Response{CorrelationID: 2, Body: &protocol.ProduceResponse{
-						Responses: []*protocol.ProduceTopicResponse{{
-							Topic:              "another-topic",
-							PartitionResponses: []*protocol.ProducePartitionResponse{{Partition: 0, ErrorCode: protocol.ErrUnknownTopicOrPartition.Code()}},
+					res: &protocol.Response{CorrelationID: 2, Body: &kmsg.ProduceResponse{
+						Topics: []kmsg.ProduceResponseTopic{{
+							Topic:      "another-topic",
+							Partitions: []kmsg.ProduceResponseTopicPartition{{Partition: 0, ErrorCode: kerr.UnknownTopicOrPartition.Code}},
 						}},
 					}}}},
 			},
 			handle: func(t *testing.T, _ *Broker, ctx *Context) {
-				switch res := ctx.res.(*protocol.Response).Body.(type) {
+				switch res := ctx.res.Body.(type) {
 				// handle timestamp explicitly since we don't know what
 				// it'll be set to
-				case *protocol.ProduceResponse:
+				case *kmsg.ProduceResponse:
 					handleProduceResponse(t, res)
 				}
 			},
@@ -407,33 +417,32 @@ func TestBroker_Run(t *testing.T) {
 				responseCh: make(chan *Context, 2),
 				requests: []*Context{{
 					header: &protocol.RequestHeader{CorrelationID: 1},
-					req: &protocol.CreateTopicRequests{
-						Timeout: time.Second,
-						Requests: []*protocol.CreateTopicRequest{{
+					req: &kmsg.CreateTopicsRequest{
+						TimeoutMillis: int32(time.Second.Milliseconds()),
+						Topics: []kmsg.CreateTopicsRequestTopic{{
 							Topic:             "test-topic",
 							NumPartitions:     1,
 							ReplicationFactor: 1,
-						}}},
+						}},
+					},
 				}, {
 					header: &protocol.RequestHeader{CorrelationID: 3},
-					req: &protocol.FindCoordinatorRequest{
+					req: &kmsg.FindCoordinatorRequest{
 						CoordinatorKey:  "test-group",
-						CoordinatorType: protocol.CoordinatorGroup,
+						CoordinatorType: 0,
 					},
 				}},
 				responses: []*Context{{
 					header: &protocol.RequestHeader{CorrelationID: 1},
-					res: &protocol.Response{CorrelationID: 1, Body: &protocol.CreateTopicsResponse{
-						TopicErrorCodes: []*protocol.TopicErrorCode{{Topic: "test-topic", ErrorCode: protocol.ErrNone.Code()}},
+					res: &protocol.Response{CorrelationID: 1, Body: &kmsg.CreateTopicsResponse{
+						Topics: []kmsg.CreateTopicsResponseTopic{{Topic: "test-topic"}},
 					}},
 				}, {
 					header: &protocol.RequestHeader{CorrelationID: 3},
-					res: &protocol.Response{CorrelationID: 3, Body: &protocol.FindCoordinatorResponse{
-						Coordinator: protocol.Coordinator{
-							NodeID: 1,
-							Host:   "localhost",
-							Port:   9092,
-						},
+					res: &protocol.Response{CorrelationID: 3, Body: &kmsg.FindCoordinatorResponse{
+						NodeID: 1,
+						Host:   "localhost",
+						Port:   9092,
 					}},
 				}},
 			},
@@ -503,7 +512,7 @@ func TestBroker_Run(t *testing.T) {
 					tt.handle(t, b, respCtx)
 				}
 
-				if diff := cmp.Diff(tt.args.responses[i].res, respCtx.res); diff != "" {
+				if diff := cmp.Diff(tt.args.responses[i].res, respCtx.res, cmpopts.IgnoreUnexported(kmsg.Tags{})); diff != "" {
 					t.Error(diff)
 				}
 			}
@@ -575,9 +584,9 @@ func TestBroker_Run_JoinSyncGroup(t *testing.T) {
 			CorrelationID: correlationID,
 			ClientID:      "join-and-sync",
 		},
-		req: &protocol.CreateTopicRequests{
-			Timeout: time.Second,
-			Requests: []*protocol.CreateTopicRequest{{
+		req: &kmsg.CreateTopicsRequest{
+			TimeoutMillis: int32(time.Second.Milliseconds()),
+			Topics: []kmsg.CreateTopicsRequestTopic{{
 				Topic:             "test-topic",
 				NumPartitions:     1,
 				ReplicationFactor: 1,
@@ -589,8 +598,8 @@ func TestBroker_Run_JoinSyncGroup(t *testing.T) {
 	act := <-resCh
 	exp := &Context{
 		header: &protocol.RequestHeader{CorrelationID: correlationID},
-		res: &protocol.Response{CorrelationID: correlationID, Body: &protocol.CreateTopicsResponse{
-			TopicErrorCodes: []*protocol.TopicErrorCode{{Topic: "test-topic", ErrorCode: protocol.ErrNone.Code()}},
+		res: &protocol.Response{CorrelationID: correlationID, Body: &kmsg.CreateTopicsResponse{
+			Topics: []kmsg.CreateTopicsResponseTopic{{Topic: "test-topic"}},
 		}},
 	}
 	if diff := cmp.Diff(exp.res, act.res); diff != "" {
@@ -605,12 +614,12 @@ func TestBroker_Run_JoinSyncGroup(t *testing.T) {
 			CorrelationID: correlationID,
 			ClientID:      "join-and-sync",
 		},
-		req: &protocol.JoinGroupRequest{
-			GroupID:      "test-group",
+		req: &kmsg.JoinGroupRequest{
+			Group:        "test-group",
 			ProtocolType: "consumer",
-			GroupProtocols: []*protocol.GroupProtocol{{
-				ProtocolName:     "protocolname",
-				ProtocolMetadata: []byte("protocolmetadata"),
+			Protocols: []kmsg.JoinGroupRequestProtocol{{
+				Name:     "protocolname",
+				Metadata: []byte("protocolmetadata"),
 			}},
 		},
 		parent: ctx,
@@ -618,10 +627,10 @@ func TestBroker_Run_JoinSyncGroup(t *testing.T) {
 	reqCh <- req
 	act = <-resCh
 
-	memberID := act.res.(*protocol.Response).Body.(*protocol.JoinGroupResponse).MemberID
+	memberID := act.res.Body.(*kmsg.JoinGroupResponse).MemberID
 	require.NotZero(t, memberID)
-	require.Equal(t, memberID, act.res.(*protocol.Response).Body.(*protocol.JoinGroupResponse).LeaderID)
-	require.Equal(t, memberID, act.res.(*protocol.Response).Body.(*protocol.JoinGroupResponse).Members[0].MemberID)
+	require.Equal(t, memberID, act.res.Body.(*kmsg.JoinGroupResponse).LeaderID)
+	require.Equal(t, memberID, act.res.Body.(*kmsg.JoinGroupResponse).Members[0].MemberID)
 
 	correlationID++
 
@@ -631,10 +640,10 @@ func TestBroker_Run_JoinSyncGroup(t *testing.T) {
 			CorrelationID: correlationID,
 			ClientID:      "join-and-sync",
 		},
-		req: &protocol.SyncGroupRequest{
-			GroupID:      "test-group",
-			GenerationID: 1,
-			MemberID:     memberID,
+		req: &kmsg.SyncGroupRequest{
+			Group:      "test-group",
+			Generation: 1,
+			MemberID:   memberID,
 		},
 		parent: ctx,
 	}
@@ -647,7 +656,7 @@ func TestBroker_Run_JoinSyncGroup(t *testing.T) {
 		},
 		res: &protocol.Response{
 			CorrelationID: correlationID,
-			Body:          &protocol.SyncGroupResponse{},
+			Body:          &kmsg.SyncGroupResponse{},
 		},
 	}
 
@@ -1066,7 +1075,7 @@ func joinLAN(t *testing.T, leader *Server, member *Server) {
 	}
 	leaderAddr := fmt.Sprintf("127.0.0.1:%d", leader.config.SerfLANConfig.MemberlistConfig.BindPort)
 	memberAddr := fmt.Sprintf("127.0.0.1:%d", member.config.SerfLANConfig.MemberlistConfig.BindPort)
-	if err := member.broker().JoinLAN(leaderAddr); err != protocol.ErrNone {
+	if err := member.broker().JoinLAN(leaderAddr); err != nil {
 		t.Fatal(err)
 	}
 	Retry(t, func() error {
@@ -1110,16 +1119,14 @@ func wantPeers(s *Broker, peers int) error {
 	return nil
 }
 
-func handleProduceResponse(t *testing.T, res *protocol.ProduceResponse) {
-	for _, response := range res.Responses {
-		for _, pr := range response.PartitionResponses {
-			if pr.ErrorCode != protocol.ErrNone.Code() {
+func handleProduceResponse(t *testing.T, res *kmsg.ProduceResponse) {
+	for _, response := range res.Topics {
+		for i, pr := range response.Partitions {
+			if pr.ErrorCode != 0 {
 				break
 			}
-			if pr.LogAppendTime.IsZero() {
-				continue
-			}
-			pr.LogAppendTime = time.Time{}
+			pr.LogAppendTime = 0
+			response.Partitions[i] = pr
 		}
 	}
 }

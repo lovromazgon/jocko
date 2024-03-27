@@ -16,7 +16,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/travisjeffery/jocko/jocko"
 	"github.com/travisjeffery/jocko/jocko/config"
-	"github.com/travisjeffery/jocko/protocol"
+	"github.com/twmb/franz-go/pkg/kerr"
+	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
@@ -115,8 +116,8 @@ func createTopic(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	resp, err := conn.CreateTopics(&protocol.CreateTopicRequests{
-		Requests: []*protocol.CreateTopicRequest{{
+	resp, err := conn.CreateTopics(&kmsg.CreateTopicsRequest{
+		Topics: []kmsg.CreateTopicsRequestTopic{{
 			Topic:             topicCfg.Topic,
 			NumPartitions:     topicCfg.Partitions,
 			ReplicationFactor: int16(topicCfg.ReplicationFactor),
@@ -128,9 +129,9 @@ func createTopic(cmd *cobra.Command, args []string) {
 		fmt.Fprintf(os.Stderr, "error with request to broker: %v\n", err)
 		os.Exit(1)
 	}
-	for _, topicErrCode := range resp.TopicErrorCodes {
-		if topicErrCode.ErrorCode != protocol.ErrNone.Code() {
-			err := protocol.Errs[topicErrCode.ErrorCode]
+	for _, topicErrCode := range resp.Topics {
+		if topicErrCode.ErrorCode != 0 {
+			err := kerr.ErrorForCode(topicErrCode.ErrorCode)
 			fmt.Fprintf(os.Stderr, "error code: %v\n", err)
 			os.Exit(1)
 		}
@@ -197,14 +198,14 @@ func setupOTelSDK(ctx context.Context) (shutdown func(context.Context) error, er
 	prop := newPropagator()
 	otel.SetTextMapPropagator(prop)
 
-	// Set up trace provider.
-	tracerProvider, err := newTraceProvider()
-	if err != nil {
-		handleErr(err)
-		return
-	}
-	shutdownFuncs = append(shutdownFuncs, tracerProvider.Shutdown)
-	otel.SetTracerProvider(tracerProvider)
+	// // Set up trace provider.
+	// tracerProvider, err := newTraceProvider()
+	// if err != nil {
+	// 	handleErr(err)
+	// 	return
+	// }
+	// shutdownFuncs = append(shutdownFuncs, tracerProvider.Shutdown)
+	// otel.SetTracerProvider(tracerProvider)
 
 	// Set up meter provider.
 	meterProvider, err := newMeterProvider()
@@ -226,8 +227,7 @@ func newPropagator() propagation.TextMapPropagator {
 }
 
 func newTraceProvider() (*trace.TracerProvider, error) {
-	traceExporter, err := stdouttrace.New(
-		stdouttrace.WithPrettyPrint())
+	traceExporter, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
 	if err != nil {
 		return nil, err
 	}

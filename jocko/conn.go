@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/travisjeffery/jocko/protocol"
+	"github.com/twmb/franz-go/pkg/kerr"
+	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
 // Conn implemenets net.Conn for connections to Jocko brokers. It's used as an internal client for replication fetches and leader and ISR requests.
@@ -80,12 +82,12 @@ func (c *Conn) Write(b []byte) (int, error) {
 func (c *Conn) Close() error { return c.conn.Close() }
 
 // LeaderAndISR sends a leader and ISR request and returns the response.
-func (c *Conn) LeaderAndISR(req *protocol.LeaderAndISRRequest) (*protocol.LeaderAndISRResponse, error) {
-	var resp protocol.LeaderAndISRResponse
+func (c *Conn) LeaderAndISR(req *kmsg.LeaderAndISRRequest) (*kmsg.LeaderAndISRResponse, error) {
+	var resp kmsg.LeaderAndISRResponse
 	err := c.writeOperation(func(deadline time.Time, id int32) error {
 		return c.writeRequest(req)
 	}, func(deadline time.Time, size int) error {
-		return c.readResponse(&resp, size, req.Version())
+		return c.readResponse(&resp, size, req.GetVersion())
 	})
 	if err != nil {
 		return nil, err
@@ -94,12 +96,12 @@ func (c *Conn) LeaderAndISR(req *protocol.LeaderAndISRRequest) (*protocol.Leader
 }
 
 // CreateTopics sends a create topics request and returns the response.
-func (c *Conn) CreateTopics(req *protocol.CreateTopicRequests) (*protocol.CreateTopicsResponse, error) {
-	var resp protocol.CreateTopicsResponse
+func (c *Conn) CreateTopics(req *kmsg.CreateTopicsRequest) (*kmsg.CreateTopicsResponse, error) {
+	var resp kmsg.CreateTopicsResponse
 	err := c.writeOperation(func(deadline time.Time, id int32) error {
 		return c.writeRequest(req)
 	}, func(deadline time.Time, size int) error {
-		return c.readResponse(&resp, size, req.Version())
+		return c.readResponse(&resp, size, req.GetVersion())
 	})
 	if err != nil {
 		return nil, err
@@ -108,12 +110,12 @@ func (c *Conn) CreateTopics(req *protocol.CreateTopicRequests) (*protocol.Create
 }
 
 // Produce sends a produce request and returns the response.
-func (c *Conn) Produce(req *protocol.ProduceRequest) (*protocol.ProduceResponse, error) {
-	var resp protocol.ProduceResponse
+func (c *Conn) Produce(req *kmsg.ProduceRequest) (*kmsg.ProduceResponse, error) {
+	var resp kmsg.ProduceResponse
 	err := c.readOperation(func(deadline time.Time, id int32) error {
 		return c.writeRequest(req)
 	}, func(deadline time.Time, size int) error {
-		return c.readResponse(&resp, size, req.Version())
+		return c.readResponse(&resp, size, req.GetVersion())
 	})
 	if err != nil {
 		return nil, err
@@ -122,12 +124,12 @@ func (c *Conn) Produce(req *protocol.ProduceRequest) (*protocol.ProduceResponse,
 }
 
 // Offsets sends an offsets request and returns the response.
-func (c *Conn) Offsets(req *protocol.OffsetsRequest) (*protocol.OffsetsResponse, error) {
-	var resp protocol.OffsetsResponse
+func (c *Conn) Offsets(req *kmsg.ListOffsetsRequest) (*kmsg.ListOffsetsResponse, error) {
+	var resp kmsg.ListOffsetsResponse
 	err := c.readOperation(func(deadline time.Time, id int32) error {
 		return c.writeRequest(req)
 	}, func(deadline time.Time, size int) error {
-		return c.readResponse(&resp, size, req.Version())
+		return c.readResponse(&resp, size, req.GetVersion())
 	})
 	if err != nil {
 		return nil, err
@@ -136,12 +138,12 @@ func (c *Conn) Offsets(req *protocol.OffsetsRequest) (*protocol.OffsetsResponse,
 }
 
 // StopReplica sends a stop replica request and returns the response.
-func (c *Conn) StopReplica(req *protocol.StopReplicaRequest) (*protocol.StopReplicaResponse, error) {
-	var resp protocol.StopReplicaResponse
+func (c *Conn) StopReplica(req *kmsg.StopReplicaRequest) (*kmsg.StopReplicaResponse, error) {
+	var resp kmsg.StopReplicaResponse
 	err := c.readOperation(func(deadline time.Time, id int32) error {
 		return c.writeRequest(req)
 	}, func(deadline time.Time, size int) error {
-		return c.readResponse(&resp, size, req.Version())
+		return c.readResponse(&resp, size, req.GetVersion())
 	})
 	if err != nil {
 		return nil, err
@@ -150,12 +152,12 @@ func (c *Conn) StopReplica(req *protocol.StopReplicaRequest) (*protocol.StopRepl
 }
 
 // UpdateMetadata sends an update metadata request and returns the response.
-func (c *Conn) UpdateMetadata(req *protocol.UpdateMetadataRequest) (*protocol.UpdateMetadataResponse, error) {
-	var resp protocol.UpdateMetadataResponse
+func (c *Conn) UpdateMetadata(req *kmsg.UpdateMetadataRequest) (*kmsg.UpdateMetadataResponse, error) {
+	var resp kmsg.UpdateMetadataResponse
 	err := c.readOperation(func(deadline time.Time, id int32) error {
 		return c.writeRequest(req)
 	}, func(deadline time.Time, size int) error {
-		return c.readResponse(&resp, size, req.Version())
+		return c.readResponse(&resp, size, req.GetVersion())
 	})
 	if err != nil {
 		return nil, err
@@ -164,12 +166,12 @@ func (c *Conn) UpdateMetadata(req *protocol.UpdateMetadataRequest) (*protocol.Up
 }
 
 // ControlledShutdown sends a controlled shutdown request and returns the response.
-func (c *Conn) ControlledShutdown(req *protocol.ControlledShutdownRequest) (*protocol.ControlledShutdownResponse, error) {
-	var resp protocol.ControlledShutdownResponse
+func (c *Conn) ControlledShutdown(req *kmsg.ControlledShutdownRequest) (*kmsg.ControlledShutdownResponse, error) {
+	var resp kmsg.ControlledShutdownResponse
 	err := c.readOperation(func(deadline time.Time, id int32) error {
 		return c.writeRequest(req)
 	}, func(deadline time.Time, size int) error {
-		return c.readResponse(&resp, size, req.Version())
+		return c.readResponse(&resp, size, req.GetVersion())
 	})
 	if err != nil {
 		return nil, err
@@ -178,12 +180,12 @@ func (c *Conn) ControlledShutdown(req *protocol.ControlledShutdownRequest) (*pro
 }
 
 // OffsetCommit sends an offset commit and returns the response.
-func (c *Conn) OffsetCommit(req *protocol.OffsetCommitRequest) (*protocol.OffsetCommitResponse, error) {
-	var resp protocol.OffsetCommitResponse
+func (c *Conn) OffsetCommit(req *kmsg.OffsetCommitRequest) (*kmsg.OffsetCommitResponse, error) {
+	var resp kmsg.OffsetCommitResponse
 	err := c.readOperation(func(deadline time.Time, id int32) error {
 		return c.writeRequest(req)
 	}, func(deadline time.Time, size int) error {
-		return c.readResponse(&resp, size, req.Version())
+		return c.readResponse(&resp, size, req.GetVersion())
 	})
 	if err != nil {
 		return nil, err
@@ -192,12 +194,12 @@ func (c *Conn) OffsetCommit(req *protocol.OffsetCommitRequest) (*protocol.Offset
 }
 
 // SaslHandshake sends a sasl handshake request and returns the response.
-func (c *Conn) SaslHandshake(req *protocol.SaslHandshakeRequest) (*protocol.SaslHandshakeResponse, error) {
-	var resp protocol.SaslHandshakeResponse
+func (c *Conn) SaslHandshake(req *kmsg.SASLHandshakeRequest) (*kmsg.SASLHandshakeResponse, error) {
+	var resp kmsg.SASLHandshakeResponse
 	err := c.readOperation(func(deadline time.Time, id int32) error {
 		return c.writeRequest(req)
 	}, func(deadline time.Time, size int) error {
-		return c.readResponse(&resp, size, req.Version())
+		return c.readResponse(&resp, size, req.GetVersion())
 	})
 	if err != nil {
 		return nil, err
@@ -206,12 +208,12 @@ func (c *Conn) SaslHandshake(req *protocol.SaslHandshakeRequest) (*protocol.Sasl
 }
 
 // OffsetFetch sends an offset fetch and returns the response.
-func (c *Conn) OffsetFetch(req *protocol.OffsetFetchRequest) (*protocol.OffsetFetchResponse, error) {
-	var resp protocol.OffsetFetchResponse
+func (c *Conn) OffsetFetch(req *kmsg.OffsetFetchRequest) (*kmsg.OffsetFetchResponse, error) {
+	var resp kmsg.OffsetFetchResponse
 	err := c.readOperation(func(deadline time.Time, id int32) error {
 		return c.writeRequest(req)
 	}, func(deadline time.Time, size int) error {
-		return c.readResponse(&resp, size, req.Version())
+		return c.readResponse(&resp, size, req.GetVersion())
 	})
 	if err != nil {
 		return nil, err
@@ -220,12 +222,12 @@ func (c *Conn) OffsetFetch(req *protocol.OffsetFetchRequest) (*protocol.OffsetFe
 }
 
 // FindCoordinator sends a find coordinator request and returns the response.
-func (c *Conn) FindCoordinator(req *protocol.FindCoordinatorRequest) (*protocol.FindCoordinatorResponse, error) {
-	var resp protocol.FindCoordinatorResponse
+func (c *Conn) FindCoordinator(req *kmsg.FindCoordinatorRequest) (*kmsg.FindCoordinatorResponse, error) {
+	var resp kmsg.FindCoordinatorResponse
 	err := c.readOperation(func(deadline time.Time, id int32) error {
 		return c.writeRequest(req)
 	}, func(deadline time.Time, size int) error {
-		return c.readResponse(&resp, size, req.Version())
+		return c.readResponse(&resp, size, req.GetVersion())
 	})
 	if err != nil {
 		return nil, err
@@ -234,12 +236,12 @@ func (c *Conn) FindCoordinator(req *protocol.FindCoordinatorRequest) (*protocol.
 }
 
 // Heartbeat sends a heartbeat request and returns the response.
-func (c *Conn) Heartbeat(req *protocol.HeartbeatRequest) (*protocol.HeartbeatResponse, error) {
-	var resp protocol.HeartbeatResponse
+func (c *Conn) Heartbeat(req *kmsg.HeartbeatRequest) (*kmsg.HeartbeatResponse, error) {
+	var resp kmsg.HeartbeatResponse
 	err := c.readOperation(func(deadline time.Time, id int32) error {
 		return c.writeRequest(req)
 	}, func(deadline time.Time, size int) error {
-		return c.readResponse(&resp, size, req.Version())
+		return c.readResponse(&resp, size, req.GetVersion())
 	})
 	if err != nil {
 		return nil, err
@@ -248,12 +250,12 @@ func (c *Conn) Heartbeat(req *protocol.HeartbeatRequest) (*protocol.HeartbeatRes
 }
 
 // LeaveGroup sends a leave group request and returns the response.
-func (c *Conn) LeaveGroup(req *protocol.LeaveGroupRequest) (*protocol.LeaveGroupResponse, error) {
-	var resp protocol.LeaveGroupResponse
+func (c *Conn) LeaveGroup(req *kmsg.LeaveGroupRequest) (*kmsg.LeaveGroupResponse, error) {
+	var resp kmsg.LeaveGroupResponse
 	err := c.readOperation(func(deadline time.Time, id int32) error {
 		return c.writeRequest(req)
 	}, func(deadline time.Time, size int) error {
-		return c.readResponse(&resp, size, req.Version())
+		return c.readResponse(&resp, size, req.GetVersion())
 	})
 	if err != nil {
 		return nil, err
@@ -262,12 +264,12 @@ func (c *Conn) LeaveGroup(req *protocol.LeaveGroupRequest) (*protocol.LeaveGroup
 }
 
 // SyncGroup sends a sync group request and returns the response.
-func (c *Conn) SyncGroup(req *protocol.SyncGroupRequest) (*protocol.SyncGroupResponse, error) {
-	var resp protocol.SyncGroupResponse
+func (c *Conn) SyncGroup(req *kmsg.SyncGroupRequest) (*kmsg.SyncGroupResponse, error) {
+	var resp kmsg.SyncGroupResponse
 	err := c.readOperation(func(deadline time.Time, id int32) error {
 		return c.writeRequest(req)
 	}, func(deadline time.Time, size int) error {
-		return c.readResponse(&resp, size, req.Version())
+		return c.readResponse(&resp, size, req.GetVersion())
 	})
 	if err != nil {
 		return nil, err
@@ -276,12 +278,12 @@ func (c *Conn) SyncGroup(req *protocol.SyncGroupRequest) (*protocol.SyncGroupRes
 }
 
 // DescribeGroups sends a describe groups request and returns the response.
-func (c *Conn) DescribeGroups(req *protocol.DescribeGroupsRequest) (*protocol.DescribeGroupsResponse, error) {
-	var resp protocol.DescribeGroupsResponse
+func (c *Conn) DescribeGroups(req *kmsg.DescribeGroupsRequest) (*kmsg.DescribeGroupsResponse, error) {
+	var resp kmsg.DescribeGroupsResponse
 	err := c.readOperation(func(deadline time.Time, id int32) error {
 		return c.writeRequest(req)
 	}, func(deadline time.Time, size int) error {
-		return c.readResponse(&resp, size, req.Version())
+		return c.readResponse(&resp, size, req.GetVersion())
 	})
 	if err != nil {
 		return nil, err
@@ -290,12 +292,12 @@ func (c *Conn) DescribeGroups(req *protocol.DescribeGroupsRequest) (*protocol.De
 }
 
 // ListGroups sends a list groups request and returns the response.
-func (c *Conn) ListGroups(req *protocol.ListGroupsRequest) (*protocol.ListGroupsResponse, error) {
-	var resp protocol.ListGroupsResponse
+func (c *Conn) ListGroups(req *kmsg.ListGroupsRequest) (*kmsg.ListGroupsResponse, error) {
+	var resp kmsg.ListGroupsResponse
 	err := c.readOperation(func(deadline time.Time, id int32) error {
 		return c.writeRequest(req)
 	}, func(deadline time.Time, size int) error {
-		return c.readResponse(&resp, size, req.Version())
+		return c.readResponse(&resp, size, req.GetVersion())
 	})
 	if err != nil {
 		return nil, err
@@ -304,12 +306,12 @@ func (c *Conn) ListGroups(req *protocol.ListGroupsRequest) (*protocol.ListGroups
 }
 
 // APIVersions sends an api version request and returns the response.
-func (c *Conn) APIVersions(req *protocol.APIVersionsRequest) (*protocol.APIVersionsResponse, error) {
-	var resp protocol.APIVersionsResponse
+func (c *Conn) APIVersions(req *kmsg.ApiVersionsRequest) (*kmsg.ApiVersionsResponse, error) {
+	var resp kmsg.ApiVersionsResponse
 	err := c.readOperation(func(deadline time.Time, id int32) error {
 		return c.writeRequest(req)
 	}, func(deadline time.Time, size int) error {
-		return c.readResponse(&resp, size, req.Version())
+		return c.readResponse(&resp, size, req.GetVersion())
 	})
 	if err != nil {
 		return nil, err
@@ -318,12 +320,12 @@ func (c *Conn) APIVersions(req *protocol.APIVersionsRequest) (*protocol.APIVersi
 }
 
 // DeleteTopics sends a delete topic request and returns the response.
-func (c *Conn) DeleteTopics(req *protocol.DeleteTopicsRequest) (*protocol.DeleteTopicsResponse, error) {
-	var resp protocol.DeleteTopicsResponse
+func (c *Conn) DeleteTopics(req *kmsg.DeleteTopicsRequest) (*kmsg.DeleteTopicsResponse, error) {
+	var resp kmsg.DeleteTopicsResponse
 	err := c.readOperation(func(deadline time.Time, id int32) error {
 		return c.writeRequest(req)
 	}, func(deadline time.Time, size int) error {
-		return c.readResponse(&resp, size, req.Version())
+		return c.readResponse(&resp, size, req.GetVersion())
 	})
 	if err != nil {
 		return nil, err
@@ -332,12 +334,12 @@ func (c *Conn) DeleteTopics(req *protocol.DeleteTopicsRequest) (*protocol.Delete
 }
 
 // JoinGroup sends a join group request and returns the response.
-func (c *Conn) JoinGroup(req *protocol.JoinGroupRequest) (*protocol.JoinGroupResponse, error) {
-	var resp protocol.JoinGroupResponse
+func (c *Conn) JoinGroup(req *kmsg.JoinGroupRequest) (*kmsg.JoinGroupResponse, error) {
+	var resp kmsg.JoinGroupResponse
 	err := c.readOperation(func(deadline time.Time, id int32) error {
 		return c.writeRequest(req)
 	}, func(deadline time.Time, size int) error {
-		return c.readResponse(&resp, size, req.Version())
+		return c.readResponse(&resp, size, req.GetVersion())
 	})
 	if err != nil {
 		return nil, err
@@ -346,12 +348,12 @@ func (c *Conn) JoinGroup(req *protocol.JoinGroupRequest) (*protocol.JoinGroupRes
 }
 
 // Metadata sends a metadata request and returns the response.
-func (c *Conn) Metadata(req *protocol.MetadataRequest) (*protocol.MetadataResponse, error) {
-	var resp protocol.MetadataResponse
+func (c *Conn) Metadata(req *kmsg.MetadataRequest) (*kmsg.MetadataResponse, error) {
+	var resp kmsg.MetadataResponse
 	err := c.readOperation(func(deadline time.Time, id int32) error {
 		return c.writeRequest(req)
 	}, func(deadline time.Time, size int) error {
-		return c.readResponse(&resp, size, req.Version())
+		return c.readResponse(&resp, size, req.GetVersion())
 	})
 	if err != nil {
 		return nil, err
@@ -360,12 +362,12 @@ func (c *Conn) Metadata(req *protocol.MetadataRequest) (*protocol.MetadataRespon
 }
 
 // Fetch sends a fetch request and returns the response.
-func (c *Conn) Fetch(req *protocol.FetchRequest) (*protocol.FetchResponse, error) {
-	var resp protocol.FetchResponse
+func (c *Conn) Fetch(req *kmsg.FetchRequest) (*kmsg.FetchResponse, error) {
+	var resp kmsg.FetchResponse
 	err := c.readOperation(func(deadline time.Time, id int32) error {
 		return c.writeRequest(req)
 	}, func(deadline time.Time, size int) error {
-		return c.readResponse(&resp, size, req.Version())
+		return c.readResponse(&resp, size, req.GetVersion())
 	})
 	if err != nil {
 		return nil, err
@@ -374,12 +376,12 @@ func (c *Conn) Fetch(req *protocol.FetchRequest) (*protocol.FetchResponse, error
 }
 
 // AlterConfigs sends an alter configs request and returns the response.
-func (c *Conn) AlterConfigs(req *protocol.AlterConfigsRequest) (*protocol.AlterConfigsResponse, error) {
-	var resp protocol.AlterConfigsResponse
+func (c *Conn) AlterConfigs(req *kmsg.AlterConfigsRequest) (*kmsg.AlterConfigsResponse, error) {
+	var resp kmsg.AlterConfigsResponse
 	err := c.readOperation(func(deadline time.Time, id int32) error {
 		return c.writeRequest(req)
 	}, func(deadline time.Time, size int) error {
-		return c.readResponse(&resp, size, req.Version())
+		return c.readResponse(&resp, size, req.GetVersion())
 	})
 	if err != nil {
 		return nil, err
@@ -388,12 +390,12 @@ func (c *Conn) AlterConfigs(req *protocol.AlterConfigsRequest) (*protocol.AlterC
 }
 
 // DescribeConfigs sends an describe configs request and returns the response.
-func (c *Conn) DescribeConfigs(req *protocol.DescribeConfigsRequest) (*protocol.DescribeConfigsResponse, error) {
-	var resp protocol.DescribeConfigsResponse
+func (c *Conn) DescribeConfigs(req *kmsg.DescribeConfigsRequest) (*kmsg.DescribeConfigsResponse, error) {
+	var resp kmsg.DescribeConfigsResponse
 	err := c.readOperation(func(deadline time.Time, id int32) error {
 		return c.writeRequest(req)
 	}, func(deadline time.Time, size int) error {
-		return c.readResponse(&resp, size, req.Version())
+		return c.readResponse(&resp, size, req.GetVersion())
 	})
 	if err != nil {
 		return nil, err
@@ -401,17 +403,20 @@ func (c *Conn) DescribeConfigs(req *protocol.DescribeConfigsRequest) (*protocol.
 	return &resp, nil
 }
 
-func (c *Conn) readResponse(resp protocol.VersionedDecoder, size int, version int16) error {
+func (c *Conn) readResponse(resp kmsg.Response, size int, version int16) error {
 	b, err := c.rbuf.Peek(size)
 	if err != nil {
 		return err
 	}
-	err = protocol.Decode(b, resp, version)
+
+	resp.SetVersion(version)
+	err = resp.ReadFrom(b)
+
 	c.rbuf.Discard(size)
 	return err
 }
 
-func (c *Conn) writeRequest(body protocol.Body) error {
+func (c *Conn) writeRequest(body kmsg.Request) error {
 	req := &protocol.Request{
 		CorrelationID: c.correlationID,
 		ClientID:      c.clientID,
@@ -451,7 +456,7 @@ func (c *Conn) do(d *connDeadline, write wop, read rop) error {
 
 	if err = read(deadline, size); err != nil {
 		switch err.(type) {
-		case protocol.Error:
+		case *kerr.Error:
 		default:
 			c.conn.Close()
 		}

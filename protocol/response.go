@@ -1,5 +1,7 @@
 package protocol
 
+import "github.com/twmb/franz-go/pkg/kmsg"
+
 type ResponseBody interface {
 	Encoder
 	VersionedDecoder
@@ -8,7 +10,7 @@ type ResponseBody interface {
 type Response struct {
 	Size          int32
 	CorrelationID int32
-	Body          ResponseBody
+	Body          kmsg.Response
 }
 
 func (r Response) Encode(pe PacketEncoder) (err error) {
@@ -17,7 +19,7 @@ func (r Response) Encode(pe PacketEncoder) (err error) {
 	if err != nil {
 		return err
 	}
-	err = r.Body.Encode(pe)
+	err = pe.PutRawBytes(r.Body.AppendTo(nil))
 	if err != nil {
 		return err
 	}
@@ -34,7 +36,8 @@ func (r Response) Decode(pd PacketDecoder, version int16) (err error) {
 		return err
 	}
 	if r.Body != nil {
-		return r.Body.Decode(pd, version)
+		r.Body.SetVersion(version)
+		return r.Body.ReadFrom(pd.Raw())
 	}
 	return nil
 }

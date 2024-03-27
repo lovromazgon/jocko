@@ -8,8 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/twmb/franz-go/pkg/kmsg"
+
 	"github.com/travisjeffery/jocko/jocko/config"
-	"github.com/travisjeffery/jocko/protocol"
 )
 
 const (
@@ -141,8 +142,8 @@ func testConnClose(t *testing.T, conn *Conn) {
 }
 
 func testConnCreateTopic(t *testing.T, conn *Conn) {
-	if _, err := conn.CreateTopics(&protocol.CreateTopicRequests{
-		Requests: []*protocol.CreateTopicRequest{{
+	if _, err := conn.CreateTopics(&kmsg.CreateTopicsRequest{
+		Topics: []kmsg.CreateTopicsRequestTopic{{
 			Topic:             "test_topic",
 			NumPartitions:     4,
 			ReplicationFactor: 1,
@@ -153,9 +154,9 @@ func testConnCreateTopic(t *testing.T, conn *Conn) {
 }
 
 func testConnLeaderAndISR(t *testing.T, conn *Conn) {
-	if _, err := conn.LeaderAndISR(&protocol.LeaderAndISRRequest{
+	if _, err := conn.LeaderAndISR(&kmsg.LeaderAndISRRequest{
 		ControllerID: 1,
-		PartitionStates: []*protocol.PartitionState{{
+		PartitionStates: []kmsg.LeaderAndISRRequestTopicPartition{{
 			Topic:     "test_topic",
 			Partition: 1,
 			Leader:    1,
@@ -168,11 +169,11 @@ func testConnLeaderAndISR(t *testing.T, conn *Conn) {
 }
 
 func testConnFetch(t *testing.T, conn *Conn) {
-	if _, err := conn.Fetch(&protocol.FetchRequest{
+	if _, err := conn.Fetch(&kmsg.FetchRequest{
 		ReplicaID: 1,
-		Topics: []*protocol.FetchTopic{{
+		Topics: []kmsg.FetchRequestTopic{{
 			Topic: "test_topic",
-			Partitions: []*protocol.FetchPartition{{
+			Partitions: []kmsg.FetchRequestTopicPartition{{
 				Partition:   1,
 				FetchOffset: 0,
 			}},
@@ -186,17 +187,15 @@ func testConnAlterConfigs(t *testing.T, conn *Conn) {
 	t.Skip()
 
 	val := "max"
-	if _, err := conn.AlterConfigs(&protocol.AlterConfigsRequest{
-		Resources: []protocol.AlterConfigsResource{
-			{
-				Type: 1,
-				Name: "system",
-				Entries: []protocol.AlterConfigsEntry{{
-					Name:  "memory",
-					Value: &val,
-				}},
-			},
-		},
+	if _, err := conn.AlterConfigs(&kmsg.AlterConfigsRequest{
+		Resources: []kmsg.AlterConfigsRequestResource{{
+			ResourceType: kmsg.ConfigResourceTypeBroker,
+			ResourceName: "system",
+			Configs: []kmsg.AlterConfigsRequestResourceConfig{{
+				Name:  "memory",
+				Value: &val,
+			}},
+		}},
 	}); err != nil {
 		t.Error(err)
 	}
@@ -205,13 +204,11 @@ func testConnAlterConfigs(t *testing.T, conn *Conn) {
 func testConnDescribeConfigs(t *testing.T, conn *Conn) {
 	t.Skip()
 
-	if _, err := conn.DescribeConfigs(&protocol.DescribeConfigsRequest{
-		Resources: []protocol.DescribeConfigsResource{
-			{
-				Type: 1,
-				Name: "system",
-			},
-		},
+	if _, err := conn.DescribeConfigs(&kmsg.DescribeConfigsRequest{
+		Resources: []kmsg.DescribeConfigsRequestResource{{
+			ResourceType: kmsg.ConfigResourceTypeBroker,
+			ResourceName: "system",
+		}},
 	}); err != nil {
 		t.Error(err)
 	}

@@ -2,9 +2,6 @@ package jocko
 
 import (
 	"context"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 	"io"
 	"net"
 	"os"
@@ -15,6 +12,10 @@ import (
 	"github.com/travisjeffery/jocko/jocko/config"
 	"github.com/travisjeffery/jocko/log"
 	"github.com/travisjeffery/jocko/protocol"
+	"github.com/twmb/franz-go/pkg/kmsg"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var (
@@ -148,10 +149,10 @@ func (s *Server) Shutdown() error {
 func (s *Server) handleRequests(conn net.Conn) {
 	defer conn.Close()
 
-	p := make([]byte, 4)
 	for {
 		ctx := context.Background()
 
+		p := make([]byte, 4)
 		_, err := io.ReadFull(conn, p)
 		if err == io.EOF {
 			break
@@ -176,7 +177,9 @@ func (s *Server) handleRequests(conn net.Conn) {
 			// TODO: handle request
 			span.RecordError(err, trace.WithAttributes(attribute.String("msg", "failed to read from connection")))
 			span.End()
-			panic(err)
+			conn.Write([]byte(err.Error()))
+			conn.Close()
+			continue
 		}
 
 		d := protocol.NewDecoder(b)
@@ -185,7 +188,9 @@ func (s *Server) handleRequests(conn net.Conn) {
 			// TODO: handle err
 			span.RecordError(err, trace.WithAttributes(attribute.String("msg", "failed to decode header")))
 			span.End()
-			panic(err)
+			conn.Write([]byte(err.Error()))
+			conn.Close()
+			continue
 		}
 
 		span.SetAttributes(
@@ -195,58 +200,61 @@ func (s *Server) handleRequests(conn net.Conn) {
 			attribute.Int64("size", int64(size)),
 		)
 
-		var req protocol.VersionedDecoder
+		var req kmsg.Request
 
-		switch header.APIKey {
-		case protocol.ProduceKey:
-			req = &protocol.ProduceRequest{}
-		case protocol.FetchKey:
-			req = &protocol.FetchRequest{}
-		case protocol.OffsetsKey:
-			req = &protocol.OffsetsRequest{}
-		case protocol.MetadataKey:
-			req = &protocol.MetadataRequest{}
-		case protocol.LeaderAndISRKey:
-			req = &protocol.LeaderAndISRRequest{}
-		case protocol.StopReplicaKey:
-			req = &protocol.StopReplicaRequest{}
-		case protocol.UpdateMetadataKey:
-			req = &protocol.UpdateMetadataRequest{}
-		case protocol.ControlledShutdownKey:
-			req = &protocol.ControlledShutdownRequest{}
-		case protocol.OffsetCommitKey:
-			req = &protocol.OffsetCommitRequest{}
-		case protocol.OffsetFetchKey:
-			req = &protocol.OffsetFetchRequest{}
-		case protocol.FindCoordinatorKey:
-			req = &protocol.FindCoordinatorRequest{}
-		case protocol.JoinGroupKey:
-			req = &protocol.JoinGroupRequest{}
-		case protocol.HeartbeatKey:
-			req = &protocol.HeartbeatRequest{}
-		case protocol.LeaveGroupKey:
-			req = &protocol.LeaveGroupRequest{}
-		case protocol.SyncGroupKey:
-			req = &protocol.SyncGroupRequest{}
-		case protocol.DescribeGroupsKey:
-			req = &protocol.DescribeGroupsRequest{}
-		case protocol.ListGroupsKey:
-			req = &protocol.ListGroupsRequest{}
-		case protocol.SaslHandshakeKey:
-			req = &protocol.SaslHandshakeRequest{}
-		case protocol.APIVersionsKey:
-			req = &protocol.APIVersionsRequest{}
-		case protocol.CreateTopicsKey:
-			req = &protocol.CreateTopicRequests{}
-		case protocol.DeleteTopicsKey:
-			req = &protocol.DeleteTopicsRequest{}
+		switch kmsg.Key(header.APIKey) {
+		case kmsg.Produce:
+			req = &kmsg.ProduceRequest{}
+		case kmsg.Fetch:
+			req = &kmsg.FetchRequest{}
+		case kmsg.ListOffsets:
+			req = &kmsg.ListOffsetsRequest{}
+		case kmsg.Metadata:
+			req = &kmsg.MetadataRequest{}
+		case kmsg.LeaderAndISR:
+			req = &kmsg.LeaderAndISRRequest{}
+		case kmsg.StopReplica:
+			req = &kmsg.StopReplicaRequest{}
+		case kmsg.UpdateMetadata:
+			req = &kmsg.UpdateMetadataRequest{}
+		case kmsg.ControlledShutdown:
+			req = &kmsg.ControlledShutdownRequest{}
+		case kmsg.OffsetCommit:
+			req = &kmsg.OffsetCommitRequest{}
+		case kmsg.OffsetFetch:
+			req = &kmsg.OffsetFetchRequest{}
+		case kmsg.FindCoordinator:
+			req = &kmsg.FindCoordinatorRequest{}
+		case kmsg.JoinGroup:
+			req = &kmsg.JoinGroupRequest{}
+		case kmsg.Heartbeat:
+			req = &kmsg.HeartbeatRequest{}
+		case kmsg.LeaveGroup:
+			req = &kmsg.LeaveGroupRequest{}
+		case kmsg.SyncGroup:
+			req = &kmsg.SyncGroupRequest{}
+		case kmsg.DescribeGroups:
+			req = &kmsg.DescribeGroupsRequest{}
+		case kmsg.ListGroups:
+			req = &kmsg.ListGroupsRequest{}
+		case kmsg.SASLHandshake:
+			req = &kmsg.SASLHandshakeRequest{}
+		case kmsg.ApiVersions:
+			req = &kmsg.ApiVersionsRequest{}
+		case kmsg.CreateTopics:
+			req = &kmsg.CreateTopicsRequest{}
+		case kmsg.DeleteTopics:
+			req = &kmsg.DeleteTopicsRequest{}
 		}
 
-		if err := req.Decode(d, header.APIVersion); err != nil {
+		req.SetVersion(header.APIVersion)
+		if err := req.ReadFrom(d.Raw()); err != nil {
 			log.Error.Printf("server/%d: %s: decode request failed: %s", s.config.ID, header, err)
 			span.RecordError(err, trace.WithAttributes(attribute.String("msg", "failed to decode request")))
 			span.End()
-			panic(err)
+			conn.Write([]byte(err.Error()))
+			conn.Close()
+			continue
 		}
 
 		decodeSpan.End()
@@ -274,7 +282,7 @@ func (s *Server) handleResponse(respCtx *Context) error {
 	_, responseSpan := s.tracer.Start(respCtx, "server: handle response")
 	defer responseSpan.End()
 
-	b, err := protocol.Encode(respCtx.res.(protocol.Encoder))
+	b, err := protocol.Encode(respCtx.res)
 	if err != nil {
 		return err
 	}
