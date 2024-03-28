@@ -299,6 +299,8 @@ func (s *Server) decodeRequest(ctx context.Context, data []byte, header *protoco
 		req = &kmsg.CreateTopicsRequest{}
 	case kmsg.DeleteTopics:
 		req = &kmsg.DeleteTopicsRequest{}
+	default:
+		return nil, fmt.Errorf("unknown API key: %d", header.APIKey)
 	}
 
 	req.SetVersion(header.APIVersion)
