@@ -1013,7 +1013,7 @@ func (b *Broker) startReplica(replica *Replica) error {
 		if err != nil {
 			return err
 		}
-		replica.Log = b.config.CommitLogMiddleware(log)
+		replica.Log = b.config.CommitLogMiddleware(log, replica.Partition)
 		// TODO: register leader-change listener on r.replica.Partition.id
 	}
 
@@ -1313,7 +1313,7 @@ type Replica struct {
 	BrokerID   int32
 	Partition  structs.Partition
 	IsLocal    bool
-	Log        config.CommitLog
+	Log        structs.CommitLog
 	Hw         int64
 	Leo        int64
 	Replicator *Replicator

@@ -4,6 +4,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/travisjeffery/jocko/jocko/structs"
+
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/serf/serf"
 )
@@ -30,7 +32,7 @@ type Config struct {
 	LeaveDrainTime                time.Duration
 	ReconcileInterval             time.Duration
 	OffsetsTopicReplicationFactor int16
-	CommitLogMiddleware           func(CommitLog) CommitLog
+	CommitLogMiddleware           func(structs.CommitLog, structs.Partition) structs.CommitLog
 }
 
 // DefaultConfig creates/returns a default configuration.
@@ -48,7 +50,7 @@ func DefaultConfig() *Config {
 		LeaveDrainTime:                5 * time.Second,
 		ReconcileInterval:             60 * time.Second,
 		OffsetsTopicReplicationFactor: 3,
-		CommitLogMiddleware:           func(log CommitLog) CommitLog { return log },
+		CommitLogMiddleware:           func(log structs.CommitLog, _ structs.Partition) structs.CommitLog { return log },
 	}
 
 	conf.SerfLANConfig.ReconnectTimeout = 3 * 24 * time.Hour
