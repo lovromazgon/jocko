@@ -2,6 +2,8 @@ package jocko
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -151,113 +153,44 @@ func (s *Server) handleRequests(conn net.Conn) {
 
 	for {
 		ctx := context.Background()
-
-		p := make([]byte, 4)
-		_, err := io.ReadFull(conn, p)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			log.Error.Printf("conn read error: %s", err)
-			break
-		}
-
 		ctx, span := s.tracer.Start(ctx, "request")
-		ctx, decodeSpan := s.tracer.Start(ctx, "server: decode request")
 
-		size := protocol.Encoding.Uint32(p)
-		if size == 0 {
-			break // TODO: should this even happen?
-		}
-
-		b := make([]byte, size+4) // +4 since we're going to copy the size into b
-		copy(b, p)
-
-		if _, err = io.ReadFull(conn, b[4:]); err != nil {
-			// TODO: handle request
-			span.RecordError(err, trace.WithAttributes(attribute.String("msg", "failed to read from connection")))
+		data, err := s.readRequestData(ctx, conn)
+		if err != nil {
+			if err != io.EOF {
+				log.Error.Printf("failed to read request data: %s", err)
+			}
+			span.RecordError(err)
 			span.End()
 			conn.Write([]byte(err.Error()))
-			conn.Close()
-			continue
+			break
 		}
 
-		d := protocol.NewDecoder(b)
-		header := new(protocol.RequestHeader)
-		if err := header.Decode(d); err != nil {
-			// TODO: handle err
-			span.RecordError(err, trace.WithAttributes(attribute.String("msg", "failed to decode header")))
+		span.SetAttributes(attribute.Int("size", len(data)))
+
+		header, n, err := s.decodeRequestHeader(ctx, data)
+		if err != nil {
+			log.Error.Printf("failed to decode request header: %s", err)
+			span.RecordError(err)
 			span.End()
 			conn.Write([]byte(err.Error()))
-			conn.Close()
-			continue
+			break
 		}
 
 		span.SetAttributes(
 			attribute.Int("api_key", int(header.APIKey)),
 			attribute.Int("correlation_id", int(header.CorrelationID)),
 			attribute.String("client_id", header.ClientID),
-			attribute.Int64("size", int64(size)),
 		)
 
-		var req kmsg.Request
-
-		switch kmsg.Key(header.APIKey) {
-		case kmsg.Produce:
-			req = &kmsg.ProduceRequest{}
-		case kmsg.Fetch:
-			req = &kmsg.FetchRequest{}
-		case kmsg.ListOffsets:
-			req = &kmsg.ListOffsetsRequest{}
-		case kmsg.Metadata:
-			req = &kmsg.MetadataRequest{}
-		case kmsg.LeaderAndISR:
-			req = &kmsg.LeaderAndISRRequest{}
-		case kmsg.StopReplica:
-			req = &kmsg.StopReplicaRequest{}
-		case kmsg.UpdateMetadata:
-			req = &kmsg.UpdateMetadataRequest{}
-		case kmsg.ControlledShutdown:
-			req = &kmsg.ControlledShutdownRequest{}
-		case kmsg.OffsetCommit:
-			req = &kmsg.OffsetCommitRequest{}
-		case kmsg.OffsetFetch:
-			req = &kmsg.OffsetFetchRequest{}
-		case kmsg.FindCoordinator:
-			req = &kmsg.FindCoordinatorRequest{}
-		case kmsg.JoinGroup:
-			req = &kmsg.JoinGroupRequest{}
-		case kmsg.Heartbeat:
-			req = &kmsg.HeartbeatRequest{}
-		case kmsg.LeaveGroup:
-			req = &kmsg.LeaveGroupRequest{}
-		case kmsg.SyncGroup:
-			req = &kmsg.SyncGroupRequest{}
-		case kmsg.DescribeGroups:
-			req = &kmsg.DescribeGroupsRequest{}
-		case kmsg.ListGroups:
-			req = &kmsg.ListGroupsRequest{}
-		case kmsg.SASLHandshake:
-			req = &kmsg.SASLHandshakeRequest{}
-		case kmsg.ApiVersions:
-			req = &kmsg.ApiVersionsRequest{}
-		case kmsg.CreateTopics:
-			req = &kmsg.CreateTopicsRequest{}
-		case kmsg.DeleteTopics:
-			req = &kmsg.DeleteTopicsRequest{}
-		}
-
-		req.SetVersion(header.APIVersion)
-		if err := req.ReadFrom(d.Raw()); err != nil {
-			log.Error.Printf("server/%d: %s: decode request failed: %s", s.config.ID, header, err)
-			span.RecordError(err, trace.WithAttributes(attribute.String("msg", "failed to decode request")))
+		req, err := s.decodeRequest(ctx, data[n:], header)
+		if err != nil {
+			log.Error.Printf("failed to decode request: %s", err)
+			span.RecordError(err)
 			span.End()
 			conn.Write([]byte(err.Error()))
-			conn.Close()
-			continue
+			break
 		}
-
-		decodeSpan.End()
 
 		ctx, _ = s.tracer.Start(ctx, "server: queue request")
 
@@ -272,6 +205,109 @@ func (s *Server) handleRequests(conn net.Conn) {
 
 		s.requestCh <- reqCtx
 	}
+}
+
+func (s *Server) readRequestData(ctx context.Context, conn io.Reader) ([]byte, error) {
+	p := make([]byte, 4)
+	_, err := io.ReadFull(conn, p)
+	if err != nil {
+		if err != io.EOF {
+			err = fmt.Errorf("conn read error: %w", err)
+		}
+		return nil, err
+	}
+
+	size := protocol.Encoding.Uint32(p)
+	if size == 0 {
+		return nil, errors.New("request size is 0")
+	}
+
+	b := make([]byte, size+4) // +4 since we're going to copy the size into b
+	copy(b, p)
+
+	if _, err = io.ReadFull(conn, b[4:]); err != nil {
+		return nil, fmt.Errorf("conn read error: %w", err)
+	}
+
+	return b, nil
+}
+
+func (s *Server) decodeRequestHeader(ctx context.Context, data []byte) (_ *protocol.RequestHeader, n int, err error) {
+	ctx, span := s.tracer.Start(ctx, "server: decode request header")
+	defer func() {
+		span.RecordError(err)
+		span.End()
+	}()
+
+	d := protocol.NewDecoder(data)
+	header := new(protocol.RequestHeader)
+	err = header.Decode(d)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return header, d.Offset(), nil
+}
+
+func (s *Server) decodeRequest(ctx context.Context, data []byte, header *protocol.RequestHeader) (req kmsg.Request, err error) {
+	ctx, span := s.tracer.Start(ctx, "server: decode request")
+	defer func() {
+		span.RecordError(err)
+		span.End()
+	}()
+
+	switch kmsg.Key(header.APIKey) {
+	case kmsg.Produce:
+		req = &kmsg.ProduceRequest{}
+	case kmsg.Fetch:
+		req = &kmsg.FetchRequest{}
+	case kmsg.ListOffsets:
+		req = &kmsg.ListOffsetsRequest{}
+	case kmsg.Metadata:
+		req = &kmsg.MetadataRequest{}
+	case kmsg.LeaderAndISR:
+		req = &kmsg.LeaderAndISRRequest{}
+	case kmsg.StopReplica:
+		req = &kmsg.StopReplicaRequest{}
+	case kmsg.UpdateMetadata:
+		req = &kmsg.UpdateMetadataRequest{}
+	case kmsg.ControlledShutdown:
+		req = &kmsg.ControlledShutdownRequest{}
+	case kmsg.OffsetCommit:
+		req = &kmsg.OffsetCommitRequest{}
+	case kmsg.OffsetFetch:
+		req = &kmsg.OffsetFetchRequest{}
+	case kmsg.FindCoordinator:
+		req = &kmsg.FindCoordinatorRequest{}
+	case kmsg.JoinGroup:
+		req = &kmsg.JoinGroupRequest{}
+	case kmsg.Heartbeat:
+		req = &kmsg.HeartbeatRequest{}
+	case kmsg.LeaveGroup:
+		req = &kmsg.LeaveGroupRequest{}
+	case kmsg.SyncGroup:
+		req = &kmsg.SyncGroupRequest{}
+	case kmsg.DescribeGroups:
+		req = &kmsg.DescribeGroupsRequest{}
+	case kmsg.ListGroups:
+		req = &kmsg.ListGroupsRequest{}
+	case kmsg.SASLHandshake:
+		req = &kmsg.SASLHandshakeRequest{}
+	case kmsg.ApiVersions:
+		req = &kmsg.ApiVersionsRequest{}
+	case kmsg.CreateTopics:
+		req = &kmsg.CreateTopicsRequest{}
+	case kmsg.DeleteTopics:
+		req = &kmsg.DeleteTopicsRequest{}
+	}
+
+	req.SetVersion(header.APIVersion)
+	err = req.ReadFrom(data)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, err
 }
 
 func (s *Server) handleResponse(respCtx *Context) error {

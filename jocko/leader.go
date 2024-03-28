@@ -119,13 +119,14 @@ func (b *Broker) setupRaft() (err error) {
 	}
 
 	_, leaderID := b.raft.LeaderWithID()
-	for i := 0; i < 5 && leaderID == ""; i++ {
+	for i := 0; i < 10 && leaderID == ""; i++ {
 		select {
 		case <-b.raft.LeaderCh():
 		case <-time.After(b.raft.ReloadableConfig().HeartbeatTimeout):
 		}
 		_, leaderID = b.raft.LeaderWithID()
 	}
+	log.Info.Printf("broker/%d: raft initialized: leader id: %s", b.config.ID, leaderID)
 
 	return nil
 }

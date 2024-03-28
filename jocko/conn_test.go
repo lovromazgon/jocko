@@ -103,7 +103,7 @@ func TestConn(t *testing.T) {
 			fn:   testConnClose,
 		},
 		{
-			name: "create topice",
+			name: "create topic",
 			fn:   testConnCreateTopic,
 		},
 		{

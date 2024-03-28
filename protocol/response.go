@@ -2,11 +2,6 @@ package protocol
 
 import "github.com/twmb/franz-go/pkg/kmsg"
 
-type ResponseBody interface {
-	Encoder
-	VersionedDecoder
-}
-
 type Response struct {
 	Size          int32
 	CorrelationID int32

@@ -190,9 +190,9 @@ func setupOTelSDK(ctx context.Context) (shutdown func(context.Context) error, er
 	}
 
 	// handleErr calls shutdown for cleanup and makes sure that all errors are returned.
-	handleErr := func(inErr error) {
-		err = errors.Join(inErr, shutdown(ctx))
-	}
+	// handleErr := func(inErr error) {
+	// 	err = errors.Join(inErr, shutdown(ctx))
+	// }
 
 	// Set up propagator.
 	prop := newPropagator()
@@ -208,13 +208,13 @@ func setupOTelSDK(ctx context.Context) (shutdown func(context.Context) error, er
 	// otel.SetTracerProvider(tracerProvider)
 
 	// Set up meter provider.
-	meterProvider, err := newMeterProvider()
-	if err != nil {
-		handleErr(err)
-		return
-	}
-	shutdownFuncs = append(shutdownFuncs, meterProvider.Shutdown)
-	otel.SetMeterProvider(meterProvider)
+	// meterProvider, err := newMeterProvider()
+	// if err != nil {
+	// 	handleErr(err)
+	// 	return
+	// }
+	// shutdownFuncs = append(shutdownFuncs, meterProvider.Shutdown)
+	// otel.SetMeterProvider(meterProvider)
 
 	return
 }
