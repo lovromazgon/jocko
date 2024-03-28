@@ -1,4 +1,4 @@
-package jocko
+package config
 
 import "io"
 

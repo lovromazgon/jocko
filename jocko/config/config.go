@@ -30,6 +30,7 @@ type Config struct {
 	LeaveDrainTime                time.Duration
 	ReconcileInterval             time.Duration
 	OffsetsTopicReplicationFactor int16
+	CommitLogMiddleware           func(CommitLog) CommitLog
 }
 
 // DefaultConfig creates/returns a default configuration.
@@ -47,6 +48,7 @@ func DefaultConfig() *Config {
 		LeaveDrainTime:                5 * time.Second,
 		ReconcileInterval:             60 * time.Second,
 		OffsetsTopicReplicationFactor: 3,
+		CommitLogMiddleware:           func(log CommitLog) CommitLog { return log },
 	}
 
 	conf.SerfLANConfig.ReconnectTimeout = 3 * 24 * time.Hour
